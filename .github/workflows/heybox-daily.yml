@@ -1,0 +1,199 @@
+name: Heybox APK Daily Tracker
+
+on:
+  schedule:
+    - cron: "0 12 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: heybox-apk-tracker
+  cancel-in-progress: false
+
+jobs:
+  track:
+    runs-on: ubuntu-latest
+    env:
+      TZ: Asia/Shanghai
+      UA: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download APKs
+        run: |
+          curl -fSL -A "$UA" -o heybox-release.apk https://dl.max-c.com/app/heybox/heybox-release.apk
+          curl -fSL -A "$UA" -o heybox-beta.apk    https://dl.max-c.com/app/heybox/heybox-beta.apk
+          ls -lh heybox-*.apk
+
+      - name: Analyze APKs
+        run: |
+          set -euo pipefail
+          DATE=$(date +%Y%m%d)
+          echo "DATE=$DATE" >> "$GITHUB_ENV"
+
+          AAPT=$(ls -1 "$ANDROID_HOME"/build-tools/*/aapt | sort -V | tail -n1)
+          echo "使用 $AAPT"
+
+          sdk_name() {
+            case $1 in
+              19) echo "Android 4.4 (KitKat)";;
+              21) echo "Android 5.0 (Lollipop)";;
+              22) echo "Android 5.1 (Lollipop)";;
+              23) echo "Android 6.0 (Marshmallow)";;
+              24) echo "Android 7.0 (Nougat)";;
+              25) echo "Android 7.1 (Nougat)";;
+              26) echo "Android 8.0 (Oreo)";;
+              27) echo "Android 8.1 (Oreo)";;
+              28) echo "Android 9 (Pie)";;
+              29) echo "Android 10";;
+              30) echo "Android 11";;
+              31) echo "Android 12";;
+              32) echo "Android 12L";;
+              33) echo "Android 13";;
+              34) echo "Android 14";;
+              35) echo "Android 15";;
+              *)  echo "Android (API $1)";;
+            esac
+          }
+
+          analyze() {
+            local channel=$1 apk=$2 url=$3
+            local badging
+            badging=$("$AAPT" dump badging "$apk")
+
+            local pkg vname vcode mins targs label abis
+            pkg=$(sed -n "s/^package: name='\([^']*\)'.*/\1/p" <<<"$badging")
+            vcode=$(sed -n "s/^package:.*versionCode='\([^']*\)'.*/\1/p" <<<"$badging")
+            vname=$(sed -n "s/^package:.*versionName='\([^']*\)'.*/\1/p" <<<"$badging")
+            mins=$(sed -n "s/^sdkVersion:'\([^']*\)'/\1/p" <<<"$badging")
+            targs=$(sed -n "s/^targetSdkVersion:'\([^']*\)'/\1/p" <<<"$badging")
+            label=$(sed -n "s/^application-label-zh-CN:'\([^']*\)'/\1/p" <<<"$badging" || true)
+            [ -z "$label" ] && label=$(sed -n "s/^application-label:'\([^']*\)'/\1/p" <<<"$badging" || true) || true
+            abis=$(grep '^native-code:' <<<"$badging" | sed "s/^native-code: //" | tr -d "'" | tr ' ' ',' | sed 's/,$//' || true)
+
+            mapfile -t perms < <(sed -n "s/^uses-permission: name='\([^']*\)'.*/\1/p" <<<"$badging")
+
+            local asset="${channel^}-${vname}(${vcode})-${DATE}.apk"
+            cp "$apk" "$asset"
+
+            local size_h size_b sha256
+            size_b=$(stat -c%s "$apk")
+            size_h=$(numfmt --to=iec --suffix=B "$size_b")
+            sha256=$(sha256sum "$apk" | awk '{print $1}')
+
+            local cert_sha=""
+            if command -v apksigner >/dev/null 2>&1 || ls "$ANDROID_HOME"/build-tools/*/apksigner >/dev/null 2>&1; then
+              local apksigner
+              apksigner=$(ls -1 "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -n1)
+              cert_sha=$("$apksigner" verify --print-certs "$apk" 2>/dev/null \
+                | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -n1 || true)
+            fi
+
+            cat > "vars-${channel}.env" <<EOF
+          CHANNEL_TITLE='${channel^}'
+          VNAME='${vname}'
+          VCODE='${vcode}'
+          ASSET='${asset}'
+          DATE='${DATE}'
+          EOF
+
+            local perm_md=""
+            if [ "${#perms[@]}" -gt 0 ]; then
+              perm_md="<details><summary>权限列表（${#perms[@]} 项）</summary>\n"
+              local p
+              for p in "${perms[@]}"; do perm_md+="\n- \`$p\`"; done
+              perm_md+="\n\n</details>"
+            fi
+
+            {
+              echo "## ${channel^} - ${label} ${vname} (${vcode})"
+              echo ""
+              echo "**文件名**：\`${asset}\`"
+              echo ""
+              echo "| 项目 | 值 |"
+              echo "| --- | --- |"
+              echo "| 应用名称 | ${label} |"
+              echo "| 包名 | \`${pkg}\` |"
+              echo "| 版本名称 | ${vname} |"
+              echo "| 版本号 | ${vcode} |"
+              echo "| 最低支持 SDK | API ${mins}（$(sdk_name "$mins")） |"
+              echo "| 目标 SDK | API ${targs}（$(sdk_name "$targs")） |"
+              echo "| 支持 ABI | ${abis:-无} |"
+              echo "| 大小 | ${size_h}（${size_b} 字节） |"
+              echo "| SHA-256 | \`${sha256}\` |"
+              if [ -n "$cert_sha" ]; then echo "| 签名证书 SHA-256 | \`${cert_sha}\` |"; fi
+              echo "| 下载源 | ${url} |"
+              echo "| 抓取日期（北京时间） | $(date '+%Y-%m-%d %H:%M') |"
+              echo ""
+              echo -e "$perm_md"
+            } > "body-${channel}.md"
+
+            echo "完成分析：$asset"
+          }
+
+          mkdir -p work && cd work
+          analyze release ../heybox-release.apk "https://dl.max-c.com/app/heybox/heybox-release.apk"
+          analyze beta    ../heybox-beta.apk    "https://dl.max-c.com/app/heybox/heybox-beta.apk"
+
+          {
+            echo "# 📦 小黑盒 APK  — ${DATE}"
+            echo ""
+            echo "### Release 渠道"
+            cat body-release.md
+            echo ""
+            echo "### Beta 渠道"
+            cat body-beta.md
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          cat body-release.md body-beta.md > analysis-section.md
+          python3 - <<'PYEOF'
+          import pathlib
+
+          p = pathlib.Path("../README.md")
+          text = p.read_text(encoding="utf-8")
+          start_marker = "<!-- HEYBOX-ANALYSIS:START -->"
+          end_marker = "<!-- HEYBOX-ANALYSIS:END -->"
+          start = text.index(start_marker) + len(start_marker)
+          end = text.index(end_marker)
+          new = pathlib.Path("analysis-section.md").read_text(encoding="utf-8").rstrip()
+          p.write_text(text[:start] + "\n" + new + "\n" + text[end:], encoding="utf-8")
+          print("README 分析区块已更新")
+          PYEOF
+
+      - name: Publish Releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          PUBLISHED=0
+          cd work
+          for channel in release beta; do
+            # shellcheck disable=SC1091
+            source "vars-${channel}.env"
+            TAG="${channel}-v${VNAME}"
+            if gh release view "$TAG" >/dev/null 2>&1; then
+              echo "::notice::Tag ${TAG} 已存在，跳过发布（分析结果见 Job Summary）"
+              continue
+            fi
+            gh release create "$TAG" "$ASSET" \
+              --title "${CHANNEL_TITLE} ${VNAME}（版本号 ${VCODE}）— ${DATE}" \
+              --notes-file "body-${channel}.md"
+            echo "已发布：${TAG}"
+            PUBLISHED=1
+          done
+
+          # 有新版本发布时，把更新后的 README 分析区块提交回仓库
+          if [ "$PUBLISHED" = 1 ]; then
+            cd ..
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add README.md
+            git commit -m "docs: 更新最新 APK 分析 — ${DATE}" || echo "README 内容无变化，跳过提交"
+            git push origin HEAD
+            echo "README 已更新并推送"
+          else
+            echo "无新版本，README 不变更"
+          fi
