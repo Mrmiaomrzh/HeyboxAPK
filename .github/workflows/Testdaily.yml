@@ -2,7 +2,10 @@ name: Heybox APK Daily Tracker
 
 on:
   schedule:
+    # GitHub Actions 使用 UTC
+    # 12:00 UTC = 北京时间 20:00
     - cron: "0 12 * * *"
+
   workflow_dispatch:
 
 permissions:
@@ -21,15 +24,79 @@ jobs:
       UA: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36
 
     steps:
+
       # ============================================================
       # Checkout
       # ============================================================
+
       - name: Checkout
         uses: actions/checkout@v4
 
       # ============================================================
+      # Environment Diagnostics
+      # ============================================================
+
+      - name: Environment Diagnostics
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "=================================================="
+          echo " Environment Diagnostics"
+          echo "=================================================="
+
+          echo
+          echo "=== System ==="
+          uname -a
+
+          echo
+          echo "=== OS Release ==="
+          cat /etc/os-release || true
+
+          echo
+          echo "=== Architecture ==="
+          uname -m
+
+          echo
+          echo "=== Bash ==="
+          bash --version | head -n 1
+
+          echo
+          echo "=== curl ==="
+          curl --version | head -n 3
+
+          echo
+          echo "=== OpenSSL ==="
+          openssl version
+
+          echo
+          echo "=== Python ==="
+          python3 --version
+
+          echo
+          echo "=== Date ==="
+          date
+          date -R
+
+          echo
+          echo "=== Timezone ==="
+          timedatectl 2>/dev/null || true
+
+          echo
+          echo "=== GitHub Runner ==="
+          echo "RUNNER_OS=${RUNNER_OS:-unknown}"
+          echo "RUNNER_ARCH=${RUNNER_ARCH:-unknown}"
+          echo "RUNNER_NAME=${RUNNER_NAME:-unknown}"
+
+          echo
+          echo "=== Android SDK ==="
+          echo "ANDROID_HOME=${ANDROID_HOME:-unknown}"
+          echo "ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT:-unknown}"
+
+      # ============================================================
       # Download APKs
       # ============================================================
+
       - name: Download APKs
         shell: bash
         run: |
@@ -37,42 +104,28 @@ jobs:
 
           HOST="dl.max-c.com"
 
+          RELEASE_URL="https://${HOST}/app/heybox/heybox-release.apk"
+          BETA_URL="https://${HOST}/app/heybox/heybox-beta.apk"
+
           echo "=================================================="
           echo " Heybox APK Download Diagnostics"
           echo "=================================================="
 
           echo
-          echo "=== Runner Information ==="
+          echo "Host: ${HOST}"
 
-          echo "--- OS ---"
-          uname -a || true
+          # ========================================================
+          # DNS Diagnostics
+          # ========================================================
 
-          echo
-          echo "--- curl ---"
-          curl --version || true
-
-          echo
-          echo "--- OpenSSL ---"
-          openssl version || true
-
-          echo
-          echo "--- Date ---"
-          date -R || true
-
-          echo
-          echo "=== Environment ==="
-          echo "UA=$UA"
-          echo "TZ=$TZ"
-          echo "Runner OS=${RUNNER_OS:-unknown}"
-          echo "Runner Arch=${RUNNER_ARCH:-unknown}"
-
-          # ==========================================================
-          # DNS
-          # ==========================================================
           echo
           echo "=================================================="
           echo " DNS Diagnostics"
           echo "=================================================="
+
+          echo
+          echo "--- /etc/resolv.conf ---"
+          cat /etc/resolv.conf || true
 
           echo
           echo "--- getent hosts ---"
@@ -86,37 +139,39 @@ jobs:
           echo "--- IPv6 addresses ---"
           getent ahostsv6 "$HOST" 2>/dev/null | sort -u || true
 
-          echo
-          echo "--- /etc/resolv.conf ---"
-          cat /etc/resolv.conf || true
+          # ========================================================
+          # Network Diagnostics
+          # ========================================================
 
-          # ==========================================================
-          # Network connectivity
-          # ==========================================================
           echo
           echo "=================================================="
           echo " Network Connectivity"
           echo "=================================================="
 
           echo
-          echo "--- IPv4 HTTPS ---"
-          curl -4 -vI \
+          echo "--- IPv4 HTTPS connectivity ---"
+
+          curl -4 \
+            -vI \
             --connect-timeout 15 \
             --max-time 30 \
             "https://${HOST}/" \
             2>&1 || true
 
           echo
-          echo "--- IPv6 HTTPS ---"
-          curl -6 -vI \
+          echo "--- IPv6 HTTPS connectivity ---"
+
+          curl -6 \
+            -vI \
             --connect-timeout 15 \
             --max-time 30 \
             "https://${HOST}/" \
             2>&1 || true
 
-          # ==========================================================
-          # TLS
-          # ==========================================================
+          # ========================================================
+          # TLS Diagnostics
+          # ========================================================
+
           echo
           echo "=================================================="
           echo " TLS Diagnostics"
@@ -125,16 +180,35 @@ jobs:
           echo
           echo "--- OpenSSL TLS handshake ---"
 
-          timeout 30 openssl s_client \
-            -connect "${HOST}:443" \
-            -servername "$HOST" \
-            -brief \
-            </dev/null \
-            2>&1 || true
+          timeout 30 \
+            openssl s_client \
+              -connect "${HOST}:443" \
+              -servername "$HOST" \
+              -brief \
+              </dev/null \
+              2>&1 || true
 
-          # ==========================================================
-          # HTTP
-          # ==========================================================
+          echo
+          echo "--- OpenSSL certificate information ---"
+
+          timeout 30 \
+            openssl s_client \
+              -connect "${HOST}:443" \
+              -servername "$HOST" \
+              </dev/null 2>/dev/null \
+            | openssl x509 \
+              -noout \
+              -subject \
+              -issuer \
+              -dates \
+              -fingerprint \
+              -sha256 \
+              2>&1 || true
+
+          # ========================================================
+          # HTTP Diagnostics
+          # ========================================================
+
           echo
           echo "=================================================="
           echo " HTTP Diagnostics"
@@ -143,48 +217,59 @@ jobs:
           echo
           echo "--- Release HEAD ---"
 
-          curl -4 -I \
+          curl -4 \
+            -I \
             --connect-timeout 30 \
             --max-time 60 \
             -A "$UA" \
-            "https://${HOST}/app/heybox/heybox-release.apk" \
+            "$RELEASE_URL" \
             2>&1 || true
 
           echo
           echo "--- Beta HEAD ---"
 
-          curl -4 -I \
+          curl -4 \
+            -I \
             --connect-timeout 30 \
             --max-time 60 \
             -A "$UA" \
-            "https://${HOST}/app/heybox/heybox-beta.apk" \
+            "$BETA_URL" \
             2>&1 || true
 
-          # ==========================================================
+          # ========================================================
           # Download function
-          # ==========================================================
+          # ========================================================
+
           download() {
             local url="$1"
             local output="$2"
 
             echo
             echo "=================================================="
-            echo " Downloading: ${output}"
-            echo " URL: ${url}"
+            echo " Downloading APK"
             echo "=================================================="
+            echo "URL: ${url}"
+            echo "Output: ${output}"
 
             rm -f "$output"
 
-            for attempt in {1..5}; do
+            local attempt
+            local exit_code
+
+            for attempt in 1 2 3 4 5; do
+
               echo
               echo "--------------------------------------------------"
-              echo "[Attempt ${attempt}/5]"
-              echo "$(date -R)"
+              echo "Attempt ${attempt}/5"
+              echo "Time: $(date -R)"
               echo "--------------------------------------------------"
+
+              rm -f "$output"
 
               set +e
 
-              curl -4 \
+              curl \
+                -4 \
                 --fail \
                 --location \
                 --show-error \
@@ -201,26 +286,35 @@ jobs:
 
               set -e
 
+              echo
+              echo "curl exit code: ${exit_code}"
+
               if [ "$exit_code" -eq 0 ] && [ -s "$output" ]; then
-                echo
-                echo "✓ Download successful"
-                echo "curl exit code: 0"
 
                 echo
-                echo "File information:"
+                echo "✓ Download successful"
+
+                echo
+                echo "--- File information ---"
                 ls -lh "$output"
+
+                echo
+                echo "--- file ---"
                 file "$output" || true
 
                 echo
-                echo "SHA256:"
+                echo "--- SHA256 ---"
                 sha256sum "$output"
+
+                echo
+                echo "--- APK header ---"
+                xxd -l 32 "$output" 2>/dev/null || true
 
                 return 0
               fi
 
               echo
               echo "✗ Download failed"
-              echo "curl exit code: ${exit_code}"
 
               if [ -f "$output" ]; then
                 echo "Partial file:"
@@ -238,21 +332,33 @@ jobs:
               fi
             done
 
-            # ========================================================
+            # ======================================================
             # Final diagnostics
-            # ========================================================
+            # ======================================================
+
             echo
             echo "=================================================="
-            echo " DOWNLOAD FAILED"
+            echo " FINAL DOWNLOAD DIAGNOSTICS"
             echo "=================================================="
 
             echo
-            echo "Final DNS lookup:"
+            echo "--- DNS ---"
+            getent hosts "$HOST" || true
+
+            echo
+            echo "--- IPv4 ---"
             getent ahostsv4 "$HOST" 2>/dev/null | sort -u || true
 
             echo
-            echo "Final IPv4 connectivity test:"
-            curl -4 -vI \
+            echo "--- IPv6 ---"
+            getent ahostsv6 "$HOST" 2>/dev/null | sort -u || true
+
+            echo
+            echo "--- Final IPv4 HTTPS test ---"
+
+            curl \
+              -4 \
+              -vI \
               --connect-timeout 30 \
               --max-time 60 \
               -A "$UA" \
@@ -260,34 +366,44 @@ jobs:
               2>&1 || true
 
             echo
-            echo "Final TLS test:"
-            timeout 30 openssl s_client \
-              -connect "${HOST}:443" \
-              -servername "$HOST" \
-              -brief \
-              </dev/null \
-              2>&1 || true
+            echo "--- Final TLS test ---"
+
+            timeout 30 \
+              openssl s_client \
+                -connect "${HOST}:443" \
+                -servername "$HOST" \
+                -brief \
+                </dev/null \
+                2>&1 || true
+
+            echo
+            echo "=================================================="
+            echo " Download failed permanently"
+            echo "=================================================="
 
             return 1
           }
 
-          # ==========================================================
+          # ========================================================
           # Download Release
-          # ==========================================================
+          # ========================================================
+
           download \
-            "https://dl.max-c.com/app/heybox/heybox-release.apk" \
+            "$RELEASE_URL" \
             "heybox-release.apk"
 
-          # ==========================================================
+          # ========================================================
           # Download Beta
-          # ==========================================================
+          # ========================================================
+
           download \
-            "https://dl.max-c.com/app/heybox/heybox-beta.apk" \
+            "$BETA_URL" \
             "heybox-beta.apk"
 
-          # ==========================================================
-          # Download summary
-          # ==========================================================
+          # ========================================================
+          # Download Summary
+          # ========================================================
+
           echo
           echo "=================================================="
           echo " Download Summary"
@@ -296,25 +412,49 @@ jobs:
           ls -lh heybox-*.apk
 
           echo
-          echo "SHA256:"
+          echo "--- SHA256 ---"
           sha256sum heybox-*.apk
 
       # ============================================================
       # Analyze APKs
       # ============================================================
+
       - name: Analyze APKs
         shell: bash
         run: |
           set -euo pipefail
 
           DATE=$(date +%Y%m%d)
+
           echo "DATE=$DATE" >> "$GITHUB_ENV"
 
-          AAPT=$(ls -1 "$ANDROID_HOME"/build-tools/*/aapt | sort -V | tail -n1)
+          # ========================================================
+          # Find AAPT
+          # ========================================================
+
+          AAPT=$(find "$ANDROID_HOME/build-tools" \
+            -type f \
+            -name aapt \
+            | sort -V \
+            | tail -n 1)
+
+          if [ -z "$AAPT" ]; then
+            echo "::error::找不到 aapt"
+            exit 1
+          fi
+
           echo "使用 $AAPT"
 
+          echo
+          echo "AAPT version:"
+          "$AAPT" version || true
+
+          # ========================================================
+          # SDK name
+          # ========================================================
+
           sdk_name() {
-            case $1 in
+            case "$1" in
               19) echo "Android 4.4 (KitKat)";;
               21) echo "Android 5.0 (Lollipop)";;
               22) echo "Android 5.1 (Lollipop)";;
@@ -331,17 +471,38 @@ jobs:
               33) echo "Android 13";;
               34) echo "Android 14";;
               35) echo "Android 15";;
-              *)  echo "Android (API $1)";;
+              36) echo "Android 16";;
+              37) echo "Android 17";;
+              *) echo "Android (API $1)";;
             esac
           }
 
+          # ========================================================
+          # Analyze function
+          # ========================================================
+
           analyze() {
-            local channel=$1
-            local apk=$2
-            local url=$3
+            local channel="$1"
+            local apk="$2"
+            local url="$3"
+
+            echo
+            echo "=================================================="
+            echo "Analyzing ${channel}"
+            echo "APK: ${apk}"
+            echo "=================================================="
+
+            # ======================================================
+            # AAPT badging
+            # ======================================================
 
             local badging
+
             badging=$("$AAPT" dump badging "$apk")
+
+            # ======================================================
+            # Basic information
+            # ======================================================
 
             local pkg
             local vname
@@ -351,20 +512,50 @@ jobs:
             local label
             local abis
 
-            pkg=$(sed -n "s/^package: name='\([^']*\)'.*/\1/p" <<<"$badging")
-            vcode=$(sed -n "s/^package:.*versionCode='\([^']*\)'.*/\1/p" <<<"$badging")
-            vname=$(sed -n "s/^package:.*versionName='\([^']*\)'.*/\1/p" <<<"$badging")
-            mins=$(sed -n "s/^sdkVersion:'\([^']*\)'/\1/p" <<<"$badging")
-            targs=$(sed -n "s/^targetSdkVersion:'\([^']*\)'/\1/p" <<<"$badging")
+            pkg=$(
+              sed \
+                -n "s/^package: name='\([^']*\)'.*/\1/p" \
+                <<<"$badging"
+            )
 
-            label=$(sed \
-              -n "s/^application-label-zh-CN:'\([^']*\)'/\1/p" \
-              <<<"$badging" || true)
+            vcode=$(
+              sed \
+                -n "s/^package:.*versionCode='\([^']*\)'.*/\1/p" \
+                <<<"$badging"
+            )
+
+            vname=$(
+              sed \
+                -n "s/^package:.*versionName='\([^']*\)'.*/\1/p" \
+                <<<"$badging"
+            )
+
+            mins=$(
+              sed \
+                -n "s/^sdkVersion:'\([^']*\)'/\1/p" \
+                <<<"$badging"
+            )
+
+            targs=$(
+              sed \
+                -n "s/^targetSdkVersion:'\([^']*\)'/\1/p" \
+                <<<"$badging"
+            )
+
+            label=$(
+              sed \
+                -n "s/^application-label-zh-CN:'\([^']*\)'/\1/p" \
+                <<<"$badging" \
+                || true
+            )
 
             if [ -z "$label" ]; then
-              label=$(sed \
-                -n "s/^application-label:'\([^']*\)'/\1/p" \
-                <<<"$badging" || true)
+              label=$(
+                sed \
+                  -n "s/^application-label:'\([^']*\)'/\1/p" \
+                  <<<"$badging" \
+                  || true
+              )
             fi
 
             abis=$(
@@ -376,35 +567,66 @@ jobs:
                 || true
             )
 
+            # ======================================================
+            # Permissions
+            # ======================================================
+
             mapfile -t perms < <(
               sed \
                 -n "s/^uses-permission: name='\([^']*\)'.*/\1/p" \
                 <<<"$badging"
             )
 
+            # ======================================================
+            # Asset
+            # ======================================================
+
             local asset="${channel^}-${vname}(${vcode})-${DATE}.apk"
 
             cp "$apk" "$asset"
+
+            # ======================================================
+            # Size / SHA256
+            # ======================================================
 
             local size_h
             local size_b
             local sha256
 
             size_b=$(stat -c%s "$apk")
-            size_h=$(numfmt --to=iec --suffix=B "$size_b")
-            sha256=$(sha256sum "$apk" | awk '{print $1}')
+
+            size_h=$(
+              numfmt \
+                --to=iec \
+                --suffix=B \
+                "$size_b"
+            )
+
+            sha256=$(
+              sha256sum "$apk" \
+                | awk '{print $1}'
+            )
+
+            # ======================================================
+            # APK certificate
+            # ======================================================
 
             local cert_sha=""
 
             if command -v apksigner >/dev/null 2>&1 || \
-              ls "$ANDROID_HOME"/build-tools/*/apksigner >/dev/null 2>&1; then
+              find "$ANDROID_HOME/build-tools" \
+                -type f \
+                -name apksigner \
+                | grep -q .; then
 
               local apksigner
 
               apksigner=$(
-                ls -1 "$ANDROID_HOME"/build-tools/*/apksigner \
+                find "$ANDROID_HOME/build-tools" \
+                  -type f \
+                  -name apksigner \
                   | sort -V \
-                  | tail -n1
+                  | tail -n 1
               )
 
               cert_sha=$(
@@ -414,10 +636,14 @@ jobs:
                   2>/dev/null \
                   | sed \
                     -n 's/^Signer #1 certificate SHA-256 digest: //p' \
-                  | head -n1 \
+                  | head -n 1 \
                   || true
               )
             fi
+
+            # ======================================================
+            # Environment variables
+            # ======================================================
 
             cat > "vars-${channel}.env" <<EOF
           CHANNEL_TITLE='${channel^}'
@@ -427,19 +653,28 @@ jobs:
           DATE='${DATE}'
           EOF
 
+            # ======================================================
+            # Permission Markdown
+            # ======================================================
+
             local perm_md=""
 
             if [ "${#perms[@]}" -gt 0 ]; then
+
               perm_md="<details><summary>权限列表（${#perms[@]} 项）</summary>\n"
 
               local p
 
               for p in "${perms[@]}"; do
-                perm_md+="\n- \`$p\"
+                perm_md+="\n- \`$p\`"
               done
 
               perm_md+="\n\n</details>"
             fi
+
+            # ======================================================
+            # Generate analysis Markdown
+            # ======================================================
 
             {
               echo "## ${channel^} - ${label} ${vname} (${vcode})"
@@ -450,14 +685,23 @@ jobs:
 
               echo "| 项目 | 值 |"
               echo "| --- | --- |"
+
               echo "| 应用名称 | ${label} |"
+
               echo "| 包名 | \`${pkg}\` |"
+
               echo "| 版本名称 | ${vname} |"
+
               echo "| 版本号 | ${vcode} |"
+
               echo "| 最低支持 SDK | API ${mins}（$(sdk_name "$mins")） |"
+
               echo "| 目标 SDK | API ${targs}（$(sdk_name "$targs")） |"
+
               echo "| 支持 ABI | ${abis:-无} |"
+
               echo "| 大小 | ${size_h}（${size_b} 字节） |"
+
               echo "| SHA-256 | \`${sha256}\` |"
 
               if [ -n "$cert_sha" ]; then
@@ -465,52 +709,113 @@ jobs:
               fi
 
               echo "| 下载源 | ${url} |"
+
               echo "| 抓取日期（北京时间） | $(date '+%Y-%m-%d %H:%M') |"
+
               echo ""
 
               echo -e "$perm_md"
 
             } > "body-${channel}.md"
 
+            echo
             echo "完成分析：$asset"
+
+            echo "Package: $pkg"
+            echo "Version Name: $vname"
+            echo "Version Code: $vcode"
+            echo "Min SDK: $mins"
+            echo "Target SDK: $targs"
+            echo "ABI: ${abis:-none}"
+            echo "Size: $size_h"
+            echo "SHA256: $sha256"
+
+            if [ -n "$cert_sha" ]; then
+              echo "Certificate SHA256: $cert_sha"
+            fi
           }
 
+          # ========================================================
+          # Work directory
+          # ========================================================
+
           mkdir -p work
+
           cd work
+
+          # ========================================================
+          # Analyze Release
+          # ========================================================
 
           analyze \
             release \
             ../heybox-release.apk \
             "https://dl.max-c.com/app/heybox/heybox-release.apk"
 
+          # ========================================================
+          # Analyze Beta
+          # ========================================================
+
           analyze \
             beta \
             ../heybox-beta.apk \
             "https://dl.max-c.com/app/heybox/heybox-beta.apk"
 
+          # ========================================================
+          # GitHub Step Summary
+          # ========================================================
+
           {
-            echo "# 📦 小黑盒 APK  — ${DATE}"
+            echo "# 📦 小黑盒 APK — ${DATE}"
             echo ""
+
             echo "### Release 渠道"
             cat body-release.md
+
             echo ""
+
             echo "### Beta 渠道"
             cat body-beta.md
+
           } >> "$GITHUB_STEP_SUMMARY"
 
-          cat body-release.md body-beta.md > analysis-section.md
+          # ========================================================
+          # README analysis section
+          # ========================================================
+
+          cat \
+            body-release.md \
+            body-beta.md \
+            > analysis-section.md
 
           python3 - <<'PYEOF'
           import pathlib
 
           p = pathlib.Path("../README.md")
-          text = p.read_text(encoding="utf-8")
+
+          text = p.read_text(
+              encoding="utf-8"
+          )
 
           start_marker = "<!-- HEYBOX-ANALYSIS:START -->"
           end_marker = "<!-- HEYBOX-ANALYSIS:END -->"
 
+          if start_marker not in text:
+              raise RuntimeError(
+                  f"找不到开始标记: {start_marker}"
+              )
+
+          if end_marker not in text:
+              raise RuntimeError(
+                  f"找不到结束标记: {end_marker}"
+              )
+
           start = text.index(start_marker) + len(start_marker)
-          end = text.index(end_marker)
+
+          end = text.index(
+              end_marker,
+              start
+          )
 
           new = pathlib.Path(
               "analysis-section.md"
@@ -518,12 +823,16 @@ jobs:
               encoding="utf-8"
           ).rstrip()
 
-          p.write_text(
+          updated = (
               text[:start]
               + "\n"
               + new
               + "\n"
-              + text[end:],
+              + text[end:]
+          )
+
+          p.write_text(
+              updated,
               encoding="utf-8"
           )
 
@@ -533,6 +842,7 @@ jobs:
       # ============================================================
       # Publish Releases
       # ============================================================
+
       - name: Publish Releases
         env:
           GH_TOKEN: ${{ github.token }}
@@ -548,15 +858,36 @@ jobs:
 
           for channel in release beta; do
 
+            echo
+            echo "=================================================="
+            echo "Processing ${channel}"
+            echo "=================================================="
+
             # shellcheck disable=SC1091
             source "vars-${channel}.env"
 
             TAG="${channel}-v${VNAME}"
 
+            echo "Channel: ${CHANNEL_TITLE}"
+            echo "Version: ${VNAME}"
+            echo "Version Code: ${VCODE}"
+            echo "Asset: ${ASSET}"
+            echo "Tag: ${TAG}"
+
+            # ======================================================
+            # Check existing release
+            # ======================================================
+
             if gh release view "$TAG" >/dev/null 2>&1; then
+
               echo "::notice::Tag ${TAG} 已存在，跳过发布（分析结果见 Job Summary）"
+
               continue
             fi
+
+            # ======================================================
+            # Create release
+            # ======================================================
 
             gh release create \
               "$TAG" \
@@ -567,32 +898,50 @@ jobs:
             echo "已发布：${TAG}"
 
             PUBLISHED=1
+
           done
 
-          # ==========================================================
+          # ========================================================
           # Update README
-          # ==========================================================
+          # ========================================================
 
           if [ "$PUBLISHED" = 1 ]; then
 
+            echo
+            echo "=================================================="
+            echo " Updating README"
+            echo "=================================================="
+
             cd ..
 
-            git config user.name "github-actions[bot]"
-            git config user.email \
+            git config \
+              user.name \
+              "github-actions[bot]"
+
+            git config \
+              user.email \
               "41898282+github-actions[bot]@users.noreply.github.com"
 
             git add README.md
 
-            git commit \
-              -m "docs: 更新最新 APK 分析 — ${DATE}" \
-              || echo "README 内容无变化，跳过提交"
+            if git diff --cached --quiet; then
 
-            git push origin HEAD
+              echo "README 内容无变化，跳过提交"
 
-            echo "README 已更新并推送"
+            else
+
+              git commit \
+                -m "docs: 更新最新 APK 分析 — ${DATE}"
+
+              git push origin HEAD
+
+              echo "README 已更新并推送"
+
+            fi
 
           else
 
+            echo
             echo "无新版本，README 不变更"
 
           fi
