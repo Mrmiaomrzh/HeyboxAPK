@@ -21,6 +21,8 @@ jobs:
 
     env:
       TZ: Asia/Shanghai
+
+      # 默认 UA
       UA: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36
 
     steps:
@@ -39,7 +41,7 @@ jobs:
       - name: Environment Diagnostics
         shell: bash
         run: |
-          set -euo pipefail
+          set -uo pipefail
 
           echo "=================================================="
           echo " Environment Diagnostics"
@@ -50,7 +52,7 @@ jobs:
           uname -a
 
           echo
-          echo "=== OS Release ==="
+          echo "=== OS ==="
           cat /etc/os-release || true
 
           echo
@@ -63,7 +65,7 @@ jobs:
 
           echo
           echo "=== curl ==="
-          curl --version | head -n 3
+          curl --version | head -n 5
 
           echo
           echo "=== OpenSSL ==="
@@ -83,7 +85,7 @@ jobs:
           timedatectl 2>/dev/null || true
 
           echo
-          echo "=== GitHub Runner ==="
+          echo "=== Runner ==="
           echo "RUNNER_OS=${RUNNER_OS:-unknown}"
           echo "RUNNER_ARCH=${RUNNER_ARCH:-unknown}"
           echo "RUNNER_NAME=${RUNNER_NAME:-unknown}"
@@ -107,20 +109,35 @@ jobs:
           RELEASE_URL="https://${HOST}/app/heybox/heybox-release.apk"
           BETA_URL="https://${HOST}/app/heybox/heybox-beta.apk"
 
+          # ==========================================================
+          # User Agents
+          # ==========================================================
+
+          UAS=(
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0"
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:132.0) Gecko/20100101 Firefox/132.0"
+            "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36"
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.1 Mobile/15E148 Safari/604.1"
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_1) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Safari/605.1.15"
+          )
+
           echo "=================================================="
-          echo " Heybox APK Download Diagnostics"
+          echo " Heybox APK Network Diagnostics"
           echo "=================================================="
 
-          echo
           echo "Host: ${HOST}"
+          echo "Time: $(date -R)"
+          echo "User-Agent count: ${#UAS[@]}"
 
-          # ========================================================
-          # DNS Diagnostics
-          # ========================================================
+          # ==========================================================
+          # STEP 1
+          # DNS
+          # ==========================================================
 
           echo
           echo "=================================================="
-          echo " DNS Diagnostics"
+          echo " STEP 1 — DNS"
           echo "=================================================="
 
           echo
@@ -133,151 +150,332 @@ jobs:
 
           echo
           echo "--- IPv4 addresses ---"
-          getent ahostsv4 "$HOST" 2>/dev/null | sort -u || true
+
+          mapfile -t IPS < <(
+            getent ahostsv4 "$HOST" 2>/dev/null \
+              | awk '{print $1}' \
+              | sort -u
+          )
+
+          if [ "${#IPS[@]}" -eq 0 ]; then
+            echo "::error::无法解析 ${HOST} 的 IPv4 地址"
+            exit 1
+          fi
+
+          echo "发现 ${#IPS[@]} 个 IPv4："
+
+          for ip in "${IPS[@]}"; do
+            echo "  - ${ip}"
+          done
 
           echo
           echo "--- IPv6 addresses ---"
-          getent ahostsv6 "$HOST" 2>/dev/null | sort -u || true
 
-          # ========================================================
-          # Network Diagnostics
-          # ========================================================
+          getent ahostsv6 "$HOST" 2>/dev/null \
+            | awk '{print $1}' \
+            | sort -u \
+            || true
 
-          echo
-          echo "=================================================="
-          echo " Network Connectivity"
-          echo "=================================================="
-
-          echo
-          echo "--- IPv4 HTTPS connectivity ---"
-
-          curl -4 \
-            -vI \
-            --connect-timeout 15 \
-            --max-time 30 \
-            "https://${HOST}/" \
-            2>&1 || true
-
-          echo
-          echo "--- IPv6 HTTPS connectivity ---"
-
-          curl -6 \
-            -vI \
-            --connect-timeout 15 \
-            --max-time 30 \
-            "https://${HOST}/" \
-            2>&1 || true
-
-          # ========================================================
-          # TLS Diagnostics
-          # ========================================================
+          # ==========================================================
+          # STEP 2
+          # IP Validation
+          # ==========================================================
 
           echo
           echo "=================================================="
-          echo " TLS Diagnostics"
+          echo " STEP 2 — IP Validation"
           echo "=================================================="
 
-          echo
-          echo "--- OpenSSL TLS handshake ---"
+          HEALTHY_IPS=()
+          FAILED_IPS=()
 
-          timeout 30 \
-            openssl s_client \
-              -connect "${HOST}:443" \
-              -servername "$HOST" \
-              -brief \
-              </dev/null \
-              2>&1 || true
-
-          echo
-          echo "--- OpenSSL certificate information ---"
-
-          timeout 30 \
-            openssl s_client \
-              -connect "${HOST}:443" \
-              -servername "$HOST" \
-              </dev/null 2>/dev/null \
-            | openssl x509 \
-              -noout \
-              -subject \
-              -issuer \
-              -dates \
-              -fingerprint \
-              -sha256 \
-              2>&1 || true
-
-          # ========================================================
-          # HTTP Diagnostics
-          # ========================================================
-
-          echo
-          echo "=================================================="
-          echo " HTTP Diagnostics"
-          echo "=================================================="
-
-          echo
-          echo "--- Release HEAD ---"
-
-          curl -4 \
-            -I \
-            --connect-timeout 30 \
-            --max-time 60 \
-            -A "$UA" \
-            "$RELEASE_URL" \
-            2>&1 || true
-
-          echo
-          echo "--- Beta HEAD ---"
-
-          curl -4 \
-            -I \
-            --connect-timeout 30 \
-            --max-time 60 \
-            -A "$UA" \
-            "$BETA_URL" \
-            2>&1 || true
-
-          # ========================================================
-          # Download function
-          # ========================================================
-
-          download() {
-            local url="$1"
-            local output="$2"
+          validate_ip() {
+            local ip="$1"
 
             echo
             echo "=================================================="
-            echo " Downloading APK"
+            echo " Testing IP: ${ip}"
             echo "=================================================="
-            echo "URL: ${url}"
-            echo "Output: ${output}"
 
-            rm -f "$output"
+            # --------------------------------------------------------
+            # TCP
+            # --------------------------------------------------------
 
-            local attempt
-            local exit_code
+            echo
+            echo "[1/4] TCP ${ip}:443"
 
-            for attempt in 1 2 3 4 5; do
+            local tcp_start
+            local tcp_end
+            local tcp_ms
+
+            tcp_start=$(date +%s%3N)
+
+            if timeout 10 bash -c \
+              "cat < /dev/null > /dev/tcp/${ip}/443" \
+              2>/dev/null; then
+
+              tcp_end=$(date +%s%3N)
+              tcp_ms=$((tcp_end - tcp_start))
+
+              echo "TCP: ✓"
+              echo "Latency: ${tcp_ms} ms"
+
+            else
+
+              tcp_end=$(date +%s%3N)
+              tcp_ms=$((tcp_end - tcp_start))
+
+              echo "TCP: ✗"
+              echo "Elapsed: ${tcp_ms} ms"
+
+              return 1
+            fi
+
+            # --------------------------------------------------------
+            # TLS
+            # --------------------------------------------------------
+
+            echo
+            echo "[2/4] TLS ${ip}:443"
+
+            local tls_start
+            local tls_end
+            local tls_ms
+            local tls_output
+            local tls_code
+
+            tls_start=$(date +%s%3N)
+
+            tls_output=$(
+              timeout 15 \
+                openssl s_client \
+                  -connect "${ip}:443" \
+                  -servername "$HOST" \
+                  -brief \
+                  </dev/null \
+                  2>&1
+            )
+
+            tls_code=$?
+
+            tls_end=$(date +%s%3N)
+            tls_ms=$((tls_end - tls_start))
+
+            echo "$tls_output"
+
+            if [ "$tls_code" -ne 0 ]; then
+              echo "TLS: ✗"
+              echo "Elapsed: ${tls_ms} ms"
+              return 1
+            fi
+
+            echo "TLS: ✓"
+            echo "Latency: ${tls_ms} ms"
+
+            # --------------------------------------------------------
+            # HTTP + UA
+            # --------------------------------------------------------
+
+            echo
+            echo "[3/4] HTTP + User-Agent"
+
+            local ua_index=0
+            local ua_success=0
+
+            for ua in "${UAS[@]}"; do
+
+              ua_index=$((ua_index + 1))
 
               echo
               echo "--------------------------------------------------"
-              echo "Attempt ${attempt}/5"
-              echo "Time: $(date -R)"
+              echo "UA ${ua_index}/${#UAS[@]}"
+              echo "${ua}"
+              echo "--------------------------------------------------"
+
+              local http_start
+              local http_end
+              local http_ms
+              local http_code
+              local http_status
+
+              http_start=$(date +%s%3N)
+
+              http_status=$(
+                curl \
+                  -4 \
+                  --resolve "${HOST}:443:${ip}" \
+                  --fail \
+                  --silent \
+                  --show-error \
+                  --location \
+                  --connect-timeout 15 \
+                  --max-time 30 \
+                  -A "$ua" \
+                  -o /dev/null \
+                  -w "%{http_code}" \
+                  -I \
+                  "$RELEASE_URL" \
+                  2>&1
+              )
+
+              http_code=$?
+
+              http_end=$(date +%s%3N)
+              http_ms=$((http_end - http_start))
+
+              if [ "$http_code" -eq 0 ]; then
+
+                echo "HTTP: ✓"
+                echo "Status: ${http_status}"
+                echo "Latency: ${http_ms} ms"
+
+                ua_success=1
+
+                break
+
+              else
+
+                echo "HTTP: ✗"
+                echo "curl exit code: ${http_code}"
+                echo "Elapsed: ${http_ms} ms"
+
+              fi
+
+            done
+
+            if [ "$ua_success" -ne 1 ]; then
+
+              echo
+              echo "All User-Agents failed for ${ip}"
+
+              return 1
+
+            fi
+
+            # --------------------------------------------------------
+            # Result
+            # --------------------------------------------------------
+
+            echo
+            echo "[4/4] Result"
+            echo "IP ${ip}: ✓ HEALTHY"
+
+            return 0
+          }
+
+          # ==========================================================
+          # Validate every IP
+          # ==========================================================
+
+          for ip in "${IPS[@]}"; do
+
+            if validate_ip "$ip"; then
+
+              HEALTHY_IPS+=("$ip")
+
+            else
+
+              FAILED_IPS+=("$ip")
+
+            fi
+
+          done
+
+          # ==========================================================
+          # IP Summary
+          # ==========================================================
+
+          echo
+          echo "=================================================="
+          echo " IP Validation Summary"
+          echo "=================================================="
+
+          echo
+          echo "Healthy IPs:"
+
+          if [ "${#HEALTHY_IPS[@]}" -eq 0 ]; then
+            echo "  NONE"
+          else
+            for ip in "${HEALTHY_IPS[@]}"; do
+              echo "  ✓ ${ip}"
+            done
+          fi
+
+          echo
+          echo "Failed IPs:"
+
+          if [ "${#FAILED_IPS[@]}" -eq 0 ]; then
+            echo "  NONE"
+          else
+            for ip in "${FAILED_IPS[@]}"; do
+              echo "  ✗ ${ip}"
+            done
+          fi
+
+          if [ "${#HEALTHY_IPS[@]}" -eq 0 ]; then
+            echo
+            echo "::error::没有任何可用后端 IP"
+            exit 1
+          fi
+
+          # ==========================================================
+          # STEP 3
+          # Download
+          # ==========================================================
+
+          download_from_ip() {
+            local ip="$1"
+            local url="$2"
+            local output="$3"
+
+            echo
+            echo "=================================================="
+            echo " Download Attempt"
+            echo "=================================================="
+
+            echo "IP: ${ip}"
+            echo "URL: ${url}"
+            echo "Output: ${output}"
+
+            local ua_index=0
+
+            # --------------------------------------------------------
+            # 每个 IP 尝试所有 UA
+            # --------------------------------------------------------
+
+            for ua in "${UAS[@]}"; do
+
+              ua_index=$((ua_index + 1))
+
+              echo
+              echo "--------------------------------------------------"
+              echo "Backend IP: ${ip}"
+              echo "User-Agent: ${ua_index}/${#UAS[@]}"
+              echo "${ua}"
               echo "--------------------------------------------------"
 
               rm -f "$output"
+
+              local start_time
+              local end_time
+              local elapsed
+              local exit_code
+
+              start_time=$(date +%s)
 
               set +e
 
               curl \
                 -4 \
+                --resolve "${HOST}:443:${ip}" \
                 --fail \
                 --location \
                 --show-error \
                 --verbose \
                 --connect-timeout 30 \
-                --max-time 600 \
+                --max-time 900 \
                 --retry 0 \
-                -A "$UA" \
+                -A "$ua" \
                 -o "$output" \
                 "$url" \
                 2>&1
@@ -286,25 +484,43 @@ jobs:
 
               set -e
 
+              end_time=$(date +%s)
+              elapsed=$((end_time - start_time))
+
               echo
               echo "curl exit code: ${exit_code}"
+              echo "Download time: ${elapsed} seconds"
 
               if [ "$exit_code" -eq 0 ] && [ -s "$output" ]; then
 
-                echo
-                echo "✓ Download successful"
+                local size
+                local sha256
+
+                size=$(stat -c%s "$output")
+
+                sha256=$(
+                  sha256sum "$output" \
+                    | awk '{print $1}'
+                )
 
                 echo
-                echo "--- File information ---"
+                echo "=================================================="
+                echo " ✓ DOWNLOAD SUCCESS"
+                echo "=================================================="
+
+                echo "Backend IP: ${ip}"
+                echo "User-Agent #${ua_index}: ${ua}"
+                echo "Time: ${elapsed} seconds"
+                echo "Size: ${size} bytes"
+                echo "SHA256: ${sha256}"
+
+                echo
+                echo "--- File ---"
                 ls -lh "$output"
 
                 echo
-                echo "--- file ---"
+                echo "--- File type ---"
                 file "$output" || true
-
-                echo
-                echo "--- SHA256 ---"
-                sha256sum "$output"
 
                 echo
                 echo "--- APK header ---"
@@ -315,105 +531,146 @@ jobs:
 
               echo
               echo "✗ Download failed"
-
-              if [ -f "$output" ]; then
-                echo "Partial file:"
-                ls -lh "$output" || true
-              else
-                echo "Output file does not exist"
-              fi
+              echo "Backend: ${ip}"
+              echo "UA #${ua_index}"
+              echo "curl exit code: ${exit_code}"
 
               rm -f "$output"
 
-              if [ "$attempt" -lt 5 ]; then
-                echo
-                echo "Waiting 30 seconds before retry..."
-                sleep 30
-              fi
             done
 
-            # ======================================================
-            # Final diagnostics
-            # ======================================================
-
             echo
-            echo "=================================================="
-            echo " FINAL DOWNLOAD DIAGNOSTICS"
-            echo "=================================================="
-
-            echo
-            echo "--- DNS ---"
-            getent hosts "$HOST" || true
-
-            echo
-            echo "--- IPv4 ---"
-            getent ahostsv4 "$HOST" 2>/dev/null | sort -u || true
-
-            echo
-            echo "--- IPv6 ---"
-            getent ahostsv6 "$HOST" 2>/dev/null | sort -u || true
-
-            echo
-            echo "--- Final IPv4 HTTPS test ---"
-
-            curl \
-              -4 \
-              -vI \
-              --connect-timeout 30 \
-              --max-time 60 \
-              -A "$UA" \
-              "$url" \
-              2>&1 || true
-
-            echo
-            echo "--- Final TLS test ---"
-
-            timeout 30 \
-              openssl s_client \
-                -connect "${HOST}:443" \
-                -servername "$HOST" \
-                -brief \
-                </dev/null \
-                2>&1 || true
-
-            echo
-            echo "=================================================="
-            echo " Download failed permanently"
-            echo "=================================================="
+            echo "All User-Agents failed for IP ${ip}"
 
             return 1
           }
 
-          # ========================================================
-          # Download Release
-          # ========================================================
+          # ==========================================================
+          # Download APK
+          # ==========================================================
 
-          download \
+          download_apk() {
+            local url="$1"
+            local output="$2"
+
+            echo
+            echo "=================================================="
+            echo " STEP 3 — APK Download"
+            echo "=================================================="
+
+            echo "URL: ${url}"
+            echo "Output: ${output}"
+
+            # --------------------------------------------------------
+            # 先使用验证成功的 IP
+            # --------------------------------------------------------
+
+            for ip in "${HEALTHY_IPS[@]}"; do
+
+              echo
+              echo "Trying healthy backend: ${ip}"
+
+              if download_from_ip \
+                "$ip" \
+                "$url" \
+                "$output"; then
+
+                echo
+                echo "=================================================="
+                echo " ✓ APK DOWNLOAD SUCCESS"
+                echo "=================================================="
+
+                return 0
+              fi
+
+              echo
+              echo "Backend ${ip} failed."
+            done
+
+            # --------------------------------------------------------
+            # 如果全部失败，再把所有 IP 重新尝试一次
+            # --------------------------------------------------------
+
+            echo
+            echo "=================================================="
+            echo " All validated backends failed"
+            echo " Retrying ALL resolved IPs"
+            echo "=================================================="
+
+            for ip in "${IPS[@]}"; do
+
+              echo
+              echo "Fallback backend: ${ip}"
+
+              if download_from_ip \
+                "$ip" \
+                "$url" \
+                "$output"; then
+
+                echo
+                echo "=================================================="
+                echo " ✓ FALLBACK DOWNLOAD SUCCESS"
+                echo "=================================================="
+
+                return 0
+              fi
+
+            done
+
+            echo
+            echo "=================================================="
+            echo " ✗ APK DOWNLOAD FAILED"
+            echo "=================================================="
+
+            echo "URL: ${url}"
+
+            return 1
+          }
+
+          # ==========================================================
+          # Release
+          # ==========================================================
+
+          download_apk \
             "$RELEASE_URL" \
             "heybox-release.apk"
 
-          # ========================================================
-          # Download Beta
-          # ========================================================
+          # ==========================================================
+          # Beta
+          # ==========================================================
 
-          download \
+          download_apk \
             "$BETA_URL" \
             "heybox-beta.apk"
 
-          # ========================================================
-          # Download Summary
-          # ========================================================
+          # ==========================================================
+          # Final download summary
+          # ==========================================================
 
           echo
           echo "=================================================="
-          echo " Download Summary"
+          echo " FINAL DOWNLOAD SUMMARY"
           echo "=================================================="
+
+          echo
+          echo "--- APK files ---"
 
           ls -lh heybox-*.apk
 
           echo
           echo "--- SHA256 ---"
+
           sha256sum heybox-*.apk
+
+          echo
+          echo "--- File type ---"
+
+          file heybox-*.apk
+
+          echo
+          echo "=================================================="
+          echo " All APK downloads completed successfully"
+          echo "=================================================="
 
       # ============================================================
       # Analyze APKs
@@ -428,15 +685,21 @@ jobs:
 
           echo "DATE=$DATE" >> "$GITHUB_ENV"
 
+          echo "=================================================="
+          echo " APK Analysis"
+          echo "=================================================="
+
           # ========================================================
           # Find AAPT
           # ========================================================
 
-          AAPT=$(find "$ANDROID_HOME/build-tools" \
-            -type f \
-            -name aapt \
-            | sort -V \
-            | tail -n 1)
+          AAPT=$(
+            find "$ANDROID_HOME/build-tools" \
+              -type f \
+              -name aapt \
+              | sort -V \
+              | tail -n 1
+          )
 
           if [ -z "$AAPT" ]; then
             echo "::error::找不到 aapt"
@@ -478,7 +741,7 @@ jobs:
           }
 
           # ========================================================
-          # Analyze function
+          # Analyze
           # ========================================================
 
           analyze() {
@@ -492,17 +755,11 @@ jobs:
             echo "APK: ${apk}"
             echo "=================================================="
 
-            # ======================================================
-            # AAPT badging
-            # ======================================================
-
             local badging
 
-            badging=$("$AAPT" dump badging "$apk")
-
-            # ======================================================
-            # Basic information
-            # ======================================================
+            badging=$(
+              "$AAPT" dump badging "$apk"
+            )
 
             local pkg
             local vname
@@ -586,11 +843,11 @@ jobs:
             cp "$apk" "$asset"
 
             # ======================================================
-            # Size / SHA256
+            # File information
             # ======================================================
 
-            local size_h
             local size_b
+            local size_h
             local sha256
 
             size_b=$(stat -c%s "$apk")
@@ -608,26 +865,22 @@ jobs:
             )
 
             # ======================================================
-            # APK certificate
+            # Certificate
             # ======================================================
 
             local cert_sha=""
 
-            if command -v apksigner >/dev/null 2>&1 || \
+            local apksigner=""
+
+            apksigner=$(
               find "$ANDROID_HOME/build-tools" \
                 -type f \
                 -name apksigner \
-                | grep -q .; then
+                | sort -V \
+                | tail -n 1
+            )
 
-              local apksigner
-
-              apksigner=$(
-                find "$ANDROID_HOME/build-tools" \
-                  -type f \
-                  -name apksigner \
-                  | sort -V \
-                  | tail -n 1
-              )
+            if [ -n "$apksigner" ]; then
 
               cert_sha=$(
                 "$apksigner" verify \
@@ -639,10 +892,11 @@ jobs:
                   | head -n 1 \
                   || true
               )
+
             fi
 
             # ======================================================
-            # Environment variables
+            # Variables
             # ======================================================
 
             cat > "vars-${channel}.env" <<EOF
@@ -654,7 +908,7 @@ jobs:
           EOF
 
             # ======================================================
-            # Permission Markdown
+            # Permissions Markdown
             # ======================================================
 
             local perm_md=""
@@ -670,10 +924,11 @@ jobs:
               done
 
               perm_md+="\n\n</details>"
+
             fi
 
             # ======================================================
-            # Generate analysis Markdown
+            # Markdown
             # ======================================================
 
             {
@@ -687,21 +942,13 @@ jobs:
               echo "| --- | --- |"
 
               echo "| 应用名称 | ${label} |"
-
               echo "| 包名 | \`${pkg}\` |"
-
               echo "| 版本名称 | ${vname} |"
-
               echo "| 版本号 | ${vcode} |"
-
               echo "| 最低支持 SDK | API ${mins}（$(sdk_name "$mins")） |"
-
               echo "| 目标 SDK | API ${targs}（$(sdk_name "$targs")） |"
-
               echo "| 支持 ABI | ${abis:-无} |"
-
               echo "| 大小 | ${size_h}（${size_b} 字节） |"
-
               echo "| SHA-256 | \`${sha256}\` |"
 
               if [ -n "$cert_sha" ]; then
@@ -709,7 +956,6 @@ jobs:
               fi
 
               echo "| 下载源 | ${url} |"
-
               echo "| 抓取日期（北京时间） | $(date '+%Y-%m-%d %H:%M') |"
 
               echo ""
@@ -719,19 +965,19 @@ jobs:
             } > "body-${channel}.md"
 
             echo
-            echo "完成分析：$asset"
+            echo "完成分析：${asset}"
 
-            echo "Package: $pkg"
-            echo "Version Name: $vname"
-            echo "Version Code: $vcode"
-            echo "Min SDK: $mins"
-            echo "Target SDK: $targs"
+            echo "Package: ${pkg}"
+            echo "Version Name: ${vname}"
+            echo "Version Code: ${vcode}"
+            echo "Min SDK: ${mins}"
+            echo "Target SDK: ${targs}"
             echo "ABI: ${abis:-none}"
-            echo "Size: $size_h"
-            echo "SHA256: $sha256"
+            echo "Size: ${size_h}"
+            echo "SHA256: ${sha256}"
 
             if [ -n "$cert_sha" ]; then
-              echo "Certificate SHA256: $cert_sha"
+              echo "Certificate SHA256: ${cert_sha}"
             fi
           }
 
@@ -744,7 +990,7 @@ jobs:
           cd work
 
           # ========================================================
-          # Analyze Release
+          # Release
           # ========================================================
 
           analyze \
@@ -753,7 +999,7 @@ jobs:
             "https://dl.max-c.com/app/heybox/heybox-release.apk"
 
           # ========================================================
-          # Analyze Beta
+          # Beta
           # ========================================================
 
           analyze \
@@ -762,7 +1008,7 @@ jobs:
             "https://dl.max-c.com/app/heybox/heybox-beta.apk"
 
           # ========================================================
-          # GitHub Step Summary
+          # Step Summary
           # ========================================================
 
           {
@@ -780,7 +1026,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
           # ========================================================
-          # README analysis section
+          # README
           # ========================================================
 
           cat \
@@ -802,15 +1048,18 @@ jobs:
 
           if start_marker not in text:
               raise RuntimeError(
-                  f"找不到开始标记: {start_marker}"
+                  "找不到 README 开始标记"
               )
 
           if end_marker not in text:
               raise RuntimeError(
-                  f"找不到结束标记: {end_marker}"
+                  "找不到 README 结束标记"
               )
 
-          start = text.index(start_marker) + len(start_marker)
+          start = (
+              text.index(start_marker)
+              + len(start_marker)
+          )
 
           end = text.index(
               end_marker,
@@ -875,12 +1124,12 @@ jobs:
             echo "Tag: ${TAG}"
 
             # ======================================================
-            # Check existing release
+            # Existing release
             # ======================================================
 
             if gh release view "$TAG" >/dev/null 2>&1; then
 
-              echo "::notice::Tag ${TAG} 已存在，跳过发布（分析结果见 Job Summary）"
+              echo "::notice::Tag ${TAG} 已存在，跳过发布"
 
               continue
             fi
@@ -902,7 +1151,7 @@ jobs:
           done
 
           # ========================================================
-          # Update README
+          # README Commit
           # ========================================================
 
           if [ "$PUBLISHED" = 1 ]; then
