@@ -23,7 +23,7 @@
 <!-- HEYBOX-ANALYSIS:START -->
 ## Release - 小黑盒 1.3.394 (1127)
 
-**文件名**：`Release-1.3.394(1127)-20260829.apk`
+**文件名**：`Release-1.3.394(1127)-20260908.apk`
 
 | 项目 | 值 |
 | --- | --- |
@@ -37,7 +37,7 @@
 | 大小 | 114MB（119532203 字节） |
 | SHA-256 | `c6138fcd44d1343f8fe608ee983621490940e850ce54c674a9ee9972d7e4f5f7` |
 | 下载源 | https://dl.max-c.com/app/heybox/heybox-release.apk |
-| 抓取日期（北京时间） | 2026-08-29 13:49 |
+| 抓取日期（北京时间） | 2026-09-08 01:14 |
 
 <details><summary>权限列表（55 项）</summary>
 
@@ -98,23 +98,23 @@
 - `com.hihonor.push.permission.READ_PUSH_NOTIFICATION_INFO`
 
 </details>
-## Beta - 小黑盒 1.3.394 (1126)
+## Beta - 小黑盒 1.3.395 (1129)
 
-**文件名**：`Beta-1.3.394(1126)-20260829.apk`
+**文件名**：`Beta-1.3.395(1129)-20260908.apk`
 
 | 项目 | 值 |
 | --- | --- |
 | 应用名称 | 小黑盒 |
 | 包名 | `com.max.xiaoheihe` |
-| 版本名称 | 1.3.394 |
-| 版本号 | 1126 |
+| 版本名称 | 1.3.395 |
+| 版本号 | 1129 |
 | 最低支持 SDK | API 23（Android 6.0 (Marshmallow)） |
 | 目标 SDK | API 34（Android 14） |
 | 支持 ABI | arm64-v8a |
-| 大小 | 114MB（118889871 字节） |
-| SHA-256 | `4b3100a0c290f1a2d20a43be7b1eb944fd8ba0a409192addf924809178140f75` |
+| 大小 | 114MB（118946956 字节） |
+| SHA-256 | `aed9ad12f3eaf841bf90a1e8632735f7abb315bea05d540d2d98a3a01499c47a` |
 | 下载源 | https://dl.max-c.com/app/heybox/heybox-beta.apk |
-| 抓取日期（北京时间） | 2026-08-29 13:49 |
+| 抓取日期（北京时间） | 2026-09-08 01:14 |
 
 <details><summary>权限列表（55 项）</summary>
 
