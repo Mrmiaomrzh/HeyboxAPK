@@ -3,7 +3,10 @@ name: Heybox APK Daily Tracker
 on:
   schedule:
     # GitHub Actions 使用 UTC
-    # 12:00 UTC = 北京时间 20:00
+    # 00:00 UTC = 北京时间 08:00（早）
+    - cron: "0 0 * * *"
+
+    # 12:00 UTC = 北京时间 20:00（晚）
     - cron: "0 12 * * *"
 
   workflow_dispatch:
@@ -1115,7 +1118,7 @@ jobs:
             # shellcheck disable=SC1091
             source "vars-${channel}.env"
 
-            TAG="${channel}-v${VNAME}"
+            TAG="${channel}-v${VNAME}-${VCODE}"
 
             echo "Channel: ${CHANNEL_TITLE}"
             echo "Version: ${VNAME}"

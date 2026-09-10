@@ -2,18 +2,18 @@
 
 自动收集小黑盒（XiaoHeiHe）安装包，每日追踪 Release 与 Beta 渠道的版本变化。
 
-[![Heybox APK Daily Tracker](https://github.com/Mrmiaomrzh/HeyboxAPK/actions/workflows/heybox-daily.yml/badge.svg)](https://github.com/Mrmiaomrzh/HeyboxAPK/actions/workflows/heybox-daily.yml)
+[![Heybox APK Daily Tracker](https://github.com/Mrmiaomrzh/HeyboxAPK/actions/workflows/HeyboxDaily.yml/badge.svg)](https://github.com/Mrmiaomrzh/HeyboxAPK/actions/workflows/HeyboxDaily.yml)
 
 ## 工作流介绍
 
-由 [`.github/workflows/heybox-daily.yml`](.github/workflows/heybox-daily.yml) 自动完成：
+由 [`.github/workflows/HeyboxDaily.yml`](.github/workflows/HeyboxDaily.yml) 自动完成：
 
-- ⏰ **定时运行**：每天北京时间 20:00（UTC 12:00）触发，也支持在 Actions 页面手动触发
+- ⏰ **定时运行**：每天 2 次 —— 北京时间 08:00（UTC 00:00）与 20:00（UTC 12:00）触发，也支持在 Actions 页面手动触发
 - ⬇️ **下载 APK**（带浏览器 UA）：
   - Release 渠道：<https://dl.max-c.com/app/heybox/heybox-release.apk>
   - Beta 渠道：<https://dl.max-c.com/app/heybox/heybox-beta.apk>
 - 📦 **命名规则**：`Release/Beta-版本名称(版本号)-yyyymmdd.apk`，例如 `Release-1.3.394(1127)-20260829.apk`
-- 🏷️ **发布 Release**：按版本打 Tag（`release-v<版本名称>` / `beta-v<版本名称>`），APK 作为附件上传；版本未更新时自动跳过，不重复发布
+- 🏷️ **发布 Release**：按小版本号（versionCode）打 Tag（`release-v<版本名称>-<小版本号>` / `beta-v<版本名称>-<小版本号>`，例如 `release-v1.3.394-1127`、`beta-v1.3.395-1129`），APK 作为附件上传；版本未更新时自动跳过，不重复发布
 - 📝 **自动分析**：解析包名、版本、最低/目标 SDK、ABI、完整权限列表、SHA-256、签名证书等信息，写入 Job Summary 与 Release Note，并自动更新本页下方「最新分析」区块提交回仓库
 
 ## 最新分析
