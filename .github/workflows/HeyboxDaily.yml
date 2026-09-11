@@ -1141,21 +1141,9 @@ jobs:
             # Create release
             # ======================================================
 
-            # Beta 渠道标记为 Pre-release：
-            # GitHub 不会把 pre-release 选为 Latest
-            # （实测 --latest=false 无效，仍会被最新发布顶上去），
-            # 保证 /releases/latest 始终指向 Release 渠道
-
-            BETA_FLAG=()
-
-            if [ "$channel" = "beta" ]; then
-              BETA_FLAG+=(--prerelease)
-            fi
-
             gh release create \
               "$TAG" \
               "$ASSET" \
-              "${BETA_FLAG[@]}" \
               --title "${CHANNEL_TITLE} ${VNAME}（版本号 ${VCODE}）— ${DATE}" \
               --notes-file "body-${channel}.md"
 
