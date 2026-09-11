@@ -14,6 +14,7 @@
   - Beta 渠道：<https://dl.max-c.com/app/heybox/heybox-beta.apk>
 - 📦 **命名规则**：`Release/Beta-版本名称(版本号)-yyyymmdd.apk`，例如 `Release-1.3.394(1127)-20260829.apk`
 - 🏷️ **发布 Release**：按小版本号（versionCode）打 Tag（`release-v<版本名称>-<小版本号>` / `beta-v<版本名称>-<小版本号>`，例如 `release-v1.3.394-1127`、`beta-v1.3.395-1129`），APK 作为附件上传；版本未更新时自动跳过，不重复发布
+- 🎯 **Latest 归属**：Beta 渠道发布时带 `--latest=false`，`/releases/latest` 始终指向 Release 渠道
 - 📝 **自动分析**：解析包名、版本、最低/目标 SDK、ABI、完整权限列表、SHA-256、签名证书等信息，写入 Job Summary 与 Release Note，并自动更新本页下方「最新分析」区块提交回仓库
 
 ## 最新分析
