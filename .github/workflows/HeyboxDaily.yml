@@ -2,11 +2,7 @@ name: Heybox APK Daily Tracker
 
 on:
   schedule:
-    # GitHub Actions 使用 UTC
-    # 00:00 UTC = 北京时间 08:00（早）
     - cron: "0 0 * * *"
-
-    # 12:00 UTC = 北京时间 20:00（晚）
     - cron: "0 12 * * *"
 
   workflow_dispatch:
@@ -20,13 +16,12 @@ concurrency:
 
 jobs:
   track:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
 
     env:
       TZ: Asia/Shanghai
 
-      # 默认 UA
-      UA: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36
+      UA: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36
 
     steps:
 
@@ -35,7 +30,7 @@ jobs:
       # ============================================================
 
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # ============================================================
       # Environment Diagnostics
@@ -117,7 +112,7 @@ jobs:
           # ==========================================================
 
           UAS=(
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36"
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0"
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:132.0) Gecko/20100101 Firefox/132.0"
             "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36"
