@@ -15,26 +15,158 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  track:
+
+  precheck:
     runs-on: ubuntu-26.04
 
     env:
       TZ: Asia/Shanghai
 
-      UA: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36
+    outputs:
+      has_update: ${{ steps.decide.outputs.has_update == 'true' || steps.cdn.outputs.etag_changed == 'true' }}
+      version_code: ${{ steps.check.outputs.version_code }}
+      version_name: ${{ steps.check.outputs.version_name }}
+      change_log: ${{ steps.check.outputs.change_log }}
+      consensus_count: ${{ steps.check.outputs.consensus_count }}
 
     steps:
-
-      # ============================================================
-      # Checkout
-      # ============================================================
 
       - name: Checkout
         uses: actions/checkout@v7
 
-      # ============================================================
-      # Environment Diagnostics
-      # ============================================================
+      - name: Prepare native checker
+        run: |
+          set -euo pipefail
+
+          chmod +x native/heybox-check-linux-x86_64
+          cp native/heybox-check-linux-x86_64 heybox-check-bin
+
+          ./heybox-check-bin check --sources hais --min-agree 1 --timeout 15 >/dev/null \
+            && echo "native checker ready"
+
+      - name: Query store sources
+        id: check
+        shell: bash
+        run: |
+          set -uo pipefail
+
+          ./heybox-check-bin check --min-agree 3 > check.json
+          CODE=$?
+          cat check.json
+
+          VCODE=$(jq -r '.consensus.version_code // empty' check.json)
+          VNAME=$(jq -r '.consensus.version_name // empty' check.json)
+          AGREE=$(jq -r '.consensus.agree_count // 0' check.json)
+          CLOG=$(jq -r '.consensus.change_log // empty' check.json)
+
+          {
+            echo "version_code=${VCODE}"
+            echo "version_name=${VNAME}"
+            echo "consensus_count=${AGREE}"
+            echo "change_log<<CHANGELOG_EOF"
+            echo "${CLOG}"
+            echo "CHANGELOG_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+          {
+            echo "### 🛰 小黑盒商店源共识"
+            echo ""
+            echo "| 来源 | versionCode | 状态 |"
+            echo "| --- | --- | --- |"
+            jq -r '.sources[] | "| \(.source) | \(.version_code // "-") | \(if .ok then "✅" else "❌ \(.error)" end) |"' check.json
+            echo ""
+            echo "**共识**: ${VNAME:-?} (${VCODE:-?}) — ${AGREE} 源一致"
+            echo ""
+            if [ -n "${CLOG}" ]; then
+              echo "**官方更新日志**:"
+              echo ""
+              echo "> ${CLOG}"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Track CDN channels
+        id: cdn
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          ./heybox-check-bin channels > channels.json
+          cat channels.json
+
+          OLD_REL=""
+          OLD_BETA=""
+          if [ -f state/cdn-etag.json ]; then
+            OLD_REL=$(jq -r '.release.etag // empty' state/cdn-etag.json)
+            OLD_BETA=$(jq -r '.beta.etag // empty' state/cdn-etag.json)
+          fi
+          NEW_REL=$(jq -r '.release.etag // empty' channels.json)
+          NEW_BETA=$(jq -r '.beta.etag // empty' channels.json)
+
+          CHANGED=false
+          if { [ -n "${NEW_REL}" ] && [ "${NEW_REL}" != "${OLD_REL}" ]; } || \
+             { [ -n "${NEW_BETA}" ] && [ "${NEW_BETA}" != "${OLD_BETA}" ]; }; then
+            CHANGED=true
+          fi
+          echo "etag_changed=${CHANGED}" >> "$GITHUB_OUTPUT"
+          echo "::notice::etag changed=${CHANGED} (rel: ${OLD_REL:0:12}→${NEW_REL:0:12}, beta: ${OLD_BETA:0:12}→${NEW_BETA:0:12})"
+
+          mkdir -p state
+          cp channels.json state/cdn-etag.json
+          if [ "${CHANGED}" = "true" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add state/cdn-etag.json
+            if ! git diff --cached --quiet; then
+              git commit -m "chore: update cdn etag state"
+              git pull --rebase origin main
+              git push origin HEAD
+              echo "Etag 状态已提交"
+            fi
+          fi
+
+      - name: Compare with published releases
+        id: decide
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VCODE: ${{ steps.check.outputs.version_code }}
+        run: |
+          set -uo pipefail
+
+          LOCAL=$(gh release list --json tagName --limit 100 \
+            | jq -r '[.[].tagName | select(test("^(release|beta)-v"))]
+                     | map(capture("-(?<c>[0-9]+)$").c | tonumber) | max // 0')
+
+          echo "local latest versionCode: ${LOCAL}"
+          echo "remote versionCode: ${VCODE}"
+
+          if [ -n "${VCODE}" ] && [ "${VCODE}" -gt "${LOCAL}" ]; then
+            echo "has_update=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::新版本 ${VCODE} > ${LOCAL}，触发下载"
+          else
+            echo "has_update=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::无新版本（远端 ${VCODE:-无} / 本地 ${LOCAL}），跳过下载"
+          fi
+
+  track:
+    needs: precheck
+    if: needs.precheck.outputs.has_update == 'true'
+    runs-on: ubuntu-26.04
+
+    env:
+      TZ: Asia/Shanghai
+      TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+      TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+      TG_API_ID: ${{ secrets.TG_API_ID }}
+      TG_API_HASH: ${{ secrets.TG_API_HASH }}
+      TG_SESSION: ${{ secrets.TG_SESSION }}
+
+      UA: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36
+
+    steps:
+
+      - name: Checkout
+        uses: actions/checkout@v7
 
       - name: Environment Diagnostics
         shell: bash
@@ -93,10 +225,6 @@ jobs:
           echo "ANDROID_HOME=${ANDROID_HOME:-unknown}"
           echo "ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT:-unknown}"
 
-      # ============================================================
-      # Download APKs
-      # ============================================================
-
       - name: Download APKs
         shell: bash
         run: |
@@ -106,10 +234,6 @@ jobs:
 
           RELEASE_URL="https://${HOST}/app/heybox/heybox-release.apk"
           BETA_URL="https://${HOST}/app/heybox/heybox-beta.apk"
-
-          # ==========================================================
-          # User Agents
-          # ==========================================================
 
           UAS=(
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36"
@@ -127,11 +251,6 @@ jobs:
           echo "Host: ${HOST}"
           echo "Time: $(date -R)"
           echo "User-Agent count: ${#UAS[@]}"
-
-          # ==========================================================
-          # STEP 1
-          # DNS
-          # ==========================================================
 
           echo
           echo "=================================================="
@@ -174,11 +293,6 @@ jobs:
             | sort -u \
             || true
 
-          # ==========================================================
-          # STEP 2
-          # IP Validation
-          # ==========================================================
-
           echo
           echo "=================================================="
           echo " STEP 2 — IP Validation"
@@ -194,10 +308,6 @@ jobs:
             echo "=================================================="
             echo " Testing IP: ${ip}"
             echo "=================================================="
-
-            # --------------------------------------------------------
-            # TCP
-            # --------------------------------------------------------
 
             echo
             echo "[1/4] TCP ${ip}:443"
@@ -228,10 +338,6 @@ jobs:
 
               return 1
             fi
-
-            # --------------------------------------------------------
-            # TLS
-            # --------------------------------------------------------
 
             echo
             echo "[2/4] TLS ${ip}:443"
@@ -269,10 +375,6 @@ jobs:
 
             echo "TLS: ✓"
             echo "Latency: ${tls_ms} ms"
-
-            # --------------------------------------------------------
-            # HTTP + UA
-            # --------------------------------------------------------
 
             echo
             echo "[3/4] HTTP + User-Agent"
@@ -350,20 +452,12 @@ jobs:
 
             fi
 
-            # --------------------------------------------------------
-            # Result
-            # --------------------------------------------------------
-
             echo
             echo "[4/4] Result"
             echo "IP ${ip}: ✓ HEALTHY"
 
             return 0
           }
-
-          # ==========================================================
-          # Validate every IP
-          # ==========================================================
 
           for ip in "${IPS[@]}"; do
 
@@ -378,10 +472,6 @@ jobs:
             fi
 
           done
-
-          # ==========================================================
-          # IP Summary
-          # ==========================================================
 
           echo
           echo "=================================================="
@@ -416,11 +506,6 @@ jobs:
             exit 1
           fi
 
-          # ==========================================================
-          # STEP 3
-          # Download
-          # ==========================================================
-
           download_from_ip() {
             local ip="$1"
             local url="$2"
@@ -436,10 +521,6 @@ jobs:
             echo "Output: ${output}"
 
             local ua_index=0
-
-            # --------------------------------------------------------
-            # 每个 IP 尝试所有 UA
-            # --------------------------------------------------------
 
             for ua in "${UAS[@]}"; do
 
@@ -543,10 +624,6 @@ jobs:
             return 1
           }
 
-          # ==========================================================
-          # Download APK
-          # ==========================================================
-
           download_apk() {
             local url="$1"
             local output="$2"
@@ -558,10 +635,6 @@ jobs:
 
             echo "URL: ${url}"
             echo "Output: ${output}"
-
-            # --------------------------------------------------------
-            # 先使用验证成功的 IP
-            # --------------------------------------------------------
 
             for ip in "${HEALTHY_IPS[@]}"; do
 
@@ -584,10 +657,6 @@ jobs:
               echo
               echo "Backend ${ip} failed."
             done
-
-            # --------------------------------------------------------
-            # 如果全部失败，再把所有 IP 重新尝试一次
-            # --------------------------------------------------------
 
             echo
             echo "=================================================="
@@ -625,25 +694,13 @@ jobs:
             return 1
           }
 
-          # ==========================================================
-          # Release
-          # ==========================================================
-
           download_apk \
             "$RELEASE_URL" \
             "heybox-release.apk"
 
-          # ==========================================================
-          # Beta
-          # ==========================================================
-
           download_apk \
             "$BETA_URL" \
             "heybox-beta.apk"
-
-          # ==========================================================
-          # Final download summary
-          # ==========================================================
 
           echo
           echo "=================================================="
@@ -670,10 +727,6 @@ jobs:
           echo " All APK downloads completed successfully"
           echo "=================================================="
 
-      # ============================================================
-      # Analyze APKs
-      # ============================================================
-
       - name: Analyze APKs
         shell: bash
         run: |
@@ -686,10 +739,6 @@ jobs:
           echo "=================================================="
           echo " APK Analysis"
           echo "=================================================="
-
-          # ========================================================
-          # Find AAPT
-          # ========================================================
 
           AAPT=$(
             find "$ANDROID_HOME/build-tools" \
@@ -709,10 +758,6 @@ jobs:
           echo
           echo "AAPT version:"
           "$AAPT" version || true
-
-          # ========================================================
-          # SDK name
-          # ========================================================
 
           sdk_name() {
             case "$1" in
@@ -737,10 +782,6 @@ jobs:
               *) echo "Android (API $1)";;
             esac
           }
-
-          # ========================================================
-          # Analyze
-          # ========================================================
 
           analyze() {
             local channel="$1"
@@ -822,27 +863,15 @@ jobs:
                 || true
             )
 
-            # ======================================================
-            # Permissions
-            # ======================================================
-
             mapfile -t perms < <(
               sed \
                 -n "s/^uses-permission: name='\([^']*\)'.*/\1/p" \
                 <<<"$badging"
             )
 
-            # ======================================================
-            # Asset
-            # ======================================================
-
             local asset="${channel^}-${vname}(${vcode})-${DATE}.apk"
 
             cp "$apk" "$asset"
-
-            # ======================================================
-            # File information
-            # ======================================================
 
             local size_b
             local size_h
@@ -861,10 +890,6 @@ jobs:
               sha256sum "$apk" \
                 | awk '{print $1}'
             )
-
-            # ======================================================
-            # Certificate
-            # ======================================================
 
             local cert_sha=""
 
@@ -893,10 +918,6 @@ jobs:
 
             fi
 
-            # ======================================================
-            # Variables
-            # ======================================================
-
             cat > "vars-${channel}.env" <<EOF
           CHANNEL_TITLE='${channel^}'
           VNAME='${vname}'
@@ -904,10 +925,6 @@ jobs:
           ASSET='${asset}'
           DATE='${DATE}'
           EOF
-
-            # ======================================================
-            # Permissions Markdown
-            # ======================================================
 
             local perm_md=""
 
@@ -924,10 +941,6 @@ jobs:
               perm_md+="\n\n</details>"
 
             fi
-
-            # ======================================================
-            # Markdown
-            # ======================================================
 
             {
               echo "## ${channel^} - ${label} ${vname} (${vcode})"
@@ -979,35 +992,19 @@ jobs:
             fi
           }
 
-          # ========================================================
-          # Work directory
-          # ========================================================
-
           mkdir -p work
 
           cd work
-
-          # ========================================================
-          # Release
-          # ========================================================
 
           analyze \
             release \
             ../heybox-release.apk \
             "https://dl.max-c.com/app/heybox/heybox-release.apk"
 
-          # ========================================================
-          # Beta
-          # ========================================================
-
           analyze \
             beta \
             ../heybox-beta.apk \
             "https://dl.max-c.com/app/heybox/heybox-beta.apk"
-
-          # ========================================================
-          # Step Summary
-          # ========================================================
 
           {
             echo "# 📦 小黑盒 APK — ${DATE}"
@@ -1022,10 +1019,6 @@ jobs:
             cat body-beta.md
 
           } >> "$GITHUB_STEP_SUMMARY"
-
-          # ========================================================
-          # README
-          # ========================================================
 
           cat \
             body-release.md \
@@ -1086,13 +1079,10 @@ jobs:
           print("README 分析区块已更新")
           PYEOF
 
-      # ============================================================
-      # Publish Releases
-      # ============================================================
-
       - name: Publish Releases
         env:
           GH_TOKEN: ${{ github.token }}
+          CHANGE_LOG: ${{ needs.precheck.outputs.change_log }}
 
         shell: bash
 
@@ -1103,6 +1093,16 @@ jobs:
 
           cd work
 
+          if [ -n "${CHANGE_LOG}" ]; then
+            {
+              echo ""
+              echo "## 📝 官方更新日志"
+              echo ""
+              echo "${CHANGE_LOG}"
+            } >> body-release.md
+            echo "已注入官方更新日志"
+          fi
+
           for channel in release beta; do
 
             echo
@@ -1110,7 +1110,6 @@ jobs:
             echo "Processing ${channel}"
             echo "=================================================="
 
-            # shellcheck disable=SC1091
             source "vars-${channel}.env"
 
             TAG="${channel}-v${VNAME}-${VCODE}"
@@ -1121,20 +1120,12 @@ jobs:
             echo "Asset: ${ASSET}"
             echo "Tag: ${TAG}"
 
-            # ======================================================
-            # Existing release
-            # ======================================================
-
             if gh release view "$TAG" >/dev/null 2>&1; then
 
               echo "::notice::Tag ${TAG} 已存在，跳过发布"
 
               continue
             fi
-
-            # ======================================================
-            # Create release
-            # ======================================================
 
             gh release create \
               "$TAG" \
@@ -1144,13 +1135,13 @@ jobs:
 
             echo "已发布：${TAG}"
 
+            echo "PUBLISHED_TAG=${TAG}" >> "$GITHUB_ENV"
+            echo "PUBLISHED_CHANNEL=${channel}" >> "$GITHUB_ENV"
+            echo "PUBLISHED_ASSET=${ASSET}" >> "$GITHUB_ENV"
+
             PUBLISHED=1
 
           done
-
-          # ========================================================
-          # README Commit
-          # ========================================================
 
           if [ "$PUBLISHED" = 1 ]; then
 
@@ -1180,6 +1171,8 @@ jobs:
               git commit \
                 -m "docs: 更新最新 APK 分析 — ${DATE}"
 
+              git pull --rebase origin main
+
               git push origin HEAD
 
               echo "README 已更新并推送"
@@ -1191,4 +1184,116 @@ jobs:
             echo
             echo "无新版本，README 不变更"
 
+          fi
+
+      - name: Publish APK to Telegram channel
+        if: env.PUBLISHED_TAG != '' && env.TG_SESSION != ''
+        env:
+          CHANGE_LOG: ${{ needs.precheck.outputs.change_log }}
+          VCODE: ${{ needs.precheck.outputs.version_code }}
+          VNAME: ${{ needs.precheck.outputs.version_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          pip install -q telethon
+
+          python - <<'PY'
+          import os, sys
+          from telethon import TelegramClient
+          from telethon.sessions import StringSession
+
+          asset = os.environ["PUBLISHED_ASSET"]
+          path = os.path.join("work", asset)
+          if not os.path.isfile(path):
+              print(f"::warning::APK 文件不存在: {path}")
+              sys.exit(0)
+
+          channel = os.environ["TG_CHAT_ID"]
+          vname = os.environ["VNAME"]
+          vcode = os.environ["VCODE"]
+          clog = os.environ.get("CHANGE_LOG", "").strip() or "（官方未提供）"
+          ch = os.environ["PUBLISHED_CHANNEL"]
+          label = "🧪 <b>Beta</b>" if ch == "beta" else "📦 <b>Release</b>"
+          repo = os.environ["GITHUB_REPOSITORY"]
+          tag = os.environ["PUBLISHED_TAG"]
+          apk_url = f"https://github.com/{repo}/releases/download/{tag}/{asset}"
+          rel_url = f"https://github.com/{repo}/releases/tag/{tag}"
+
+          caption = (
+              f"{label} 小黑盒 APK 更新\n\n"
+              f"<b>{vname}</b>（versionCode {vcode}）\n\n"
+              f"<b>更新日志</b>：\n{clog}\n\n"
+              f"📥 <a href=\"{apk_url}\">APK 直接下载</a>\n"
+              f"🔗 <a href=\"{rel_url}\">{tag}</a>"
+          )
+
+          try:
+              with TelegramClient(
+                  StringSession(os.environ["TG_SESSION"]),
+                  int(os.environ["TG_API_ID"]),
+                  os.environ["TG_API_HASH"],
+              ) as client:
+                  client.send_file(
+                      channel, path,
+                      caption=caption,
+                      parse_mode="html",
+                      force_document=True,
+                  )
+              print("APK 已发布到 Telegram 频道")
+          except Exception as e:
+              print(f"::warning::Telegram 频道发布失败: {e}")
+              sys.exit(0)
+          PY
+
+      - name: Notify Telegram
+        if: env.PUBLISHED_TAG != '' && env.TG_SESSION == '' && env.TG_BOT_TOKEN != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHANGE_LOG: ${{ needs.precheck.outputs.change_log }}
+          VCODE: ${{ needs.precheck.outputs.version_code }}
+          VNAME: ${{ needs.precheck.outputs.version_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ -z "${TG_BOT_TOKEN}" ] || [ -z "${TG_CHAT_ID}" ]; then
+            echo "::notice::未配置 TG_BOT_TOKEN / TG_CHAT_ID，跳过 Telegram 通知"
+            exit 0
+          fi
+
+          RELEASE_URL=$(gh release view "$PUBLISHED_TAG" --json url -q .url)
+          APK_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${PUBLISHED_TAG}/${PUBLISHED_ASSET}"
+
+          if [ "${PUBLISHED_CHANNEL}" = "beta" ]; then
+            CHANNEL_TAG="🧪 <b>Beta</b>"
+          else
+            CHANNEL_TAG="📦 <b>Release</b>"
+          fi
+
+          TEXT=$(cat <<MSG
+          ${CHANNEL_TAG} 小黑盒 APK 更新
+
+          <b>${VNAME}</b>（versionCode ${VCODE}）
+
+          <b>更新日志</b>：
+          ${CHANGE_LOG:-（官方未提供）}
+
+          📥 <a href="${APK_URL}">APK 直接下载</a>
+          🔗 <a href="${RELEASE_URL}">${PUBLISHED_TAG}</a>
+          MSG
+          )
+
+          HTTP=$(curl -s -o tg-response.json -w "%{http_code}" \
+            -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${TG_CHAT_ID}" \
+            --data-urlencode "parse_mode=HTML" \
+            --data-urlencode "disable_web_preview=false" \
+            --data-urlencode "text=${TEXT}")
+
+          if [ "$HTTP" = "200" ] && jq -e '.ok == true' tg-response.json >/dev/null; then
+            echo "Telegram 通知已发送"
+          else
+            echo "::warning::Telegram 通知失败 (HTTP ${HTTP})"
+            cat tg-response.json || true
           fi
