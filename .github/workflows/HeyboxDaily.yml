@@ -1270,8 +1270,6 @@ jobs:
             echo "已注入官方更新日志"
           fi
 
-          cd work
-
           for channel in release beta; do
 
             echo
