@@ -15,11 +15,166 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  track:
+
+  # ============================================================
+  # Version Pre-Check (native agent)
+  # ============================================================
+  # Builds the heybox-check native binary (protocol constants are
+  # encrypted inside the binary — nothing plaintext in this repo),
+  # queries five app-store sources for com.max.xiaoheihe, requires
+  # cross-source versionCode consensus, and tracks CDN Etags so the
+  # heavy download job only runs when something actually changed.
+
+  precheck:
     runs-on: ubuntu-26.04
 
     env:
       TZ: Asia/Shanghai
+
+    outputs:
+      has_update: ${{ steps.decide.outputs.has_update == 'true' || steps.cdn.outputs.etag_changed == 'true' }}
+      version_code: ${{ steps.check.outputs.version_code }}
+      version_name: ${{ steps.check.outputs.version_name }}
+      change_log: ${{ steps.check.outputs.change_log }}
+      consensus_count: ${{ steps.check.outputs.consensus_count }}
+
+    steps:
+
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Prepare native checker
+        run: |
+          set -euo pipefail
+
+          # 预编译的闭源 agent，随仓库分发（源码不在公开仓库中）
+          chmod +x native/heybox-check-linux-x86_64
+          cp native/heybox-check-linux-x86_64 heybox-check-bin
+
+          ./heybox-check-bin check --sources hais --min-agree 1 --timeout 15 >/dev/null \
+            && echo "native checker ready"
+
+      - name: Query store sources
+        id: check
+        shell: bash
+        run: |
+          set -uo pipefail
+
+          ./heybox-check-bin check --min-agree 3 > check.json
+          CODE=$?
+          cat check.json
+
+          VCODE=$(jq -r '.consensus.version_code // empty' check.json)
+          VNAME=$(jq -r '.consensus.version_name // empty' check.json)
+          AGREE=$(jq -r '.consensus.agree_count // 0' check.json)
+          CLOG=$(jq -r '.consensus.change_log // empty' check.json)
+
+          {
+            echo "version_code=${VCODE}"
+            echo "version_name=${VNAME}"
+            echo "consensus_count=${AGREE}"
+            echo "change_log<<CHANGELOG_EOF"
+            echo "${CLOG}"
+            echo "CHANGELOG_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+          {
+            echo "### 🛰 小黑盒商店源共识"
+            echo ""
+            echo "| 来源 | versionCode | 状态 |"
+            echo "| --- | --- | --- |"
+            jq -r '.sources[] | "| \(.source) | \(.version_code // "-") | \(if .ok then "✅" else "❌ \(.error)" end) |"' check.json
+            echo ""
+            echo "**共识**: ${VNAME:-?} (${VCODE:-?}) — ${AGREE} 源一致"
+            echo ""
+            if [ -n "${CLOG}" ]; then
+              echo "**官方更新日志**:"
+              echo ""
+              echo "> ${CLOG}"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Track CDN channels
+        id: cdn
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # 商店只收录 release 渠道；beta 用 CDN Etag 跟踪（零下载）。
+          ./heybox-check-bin channels > channels.json
+          cat channels.json
+
+          OLD_REL=""
+          OLD_BETA=""
+          if [ -f state/cdn-etag.json ]; then
+            OLD_REL=$(jq -r '.release.etag // empty' state/cdn-etag.json)
+            OLD_BETA=$(jq -r '.beta.etag // empty' state/cdn-etag.json)
+          fi
+          NEW_REL=$(jq -r '.release.etag // empty' channels.json)
+          NEW_BETA=$(jq -r '.beta.etag // empty' channels.json)
+
+          CHANGED=false
+          if { [ -n "${NEW_REL}" ] && [ "${NEW_REL}" != "${OLD_REL}" ]; } || \
+             { [ -n "${NEW_BETA}" ] && [ "${NEW_BETA}" != "${OLD_BETA}" ]; }; then
+            CHANGED=true
+          fi
+          echo "etag_changed=${CHANGED}" >> "$GITHUB_OUTPUT"
+          echo "::notice::etag changed=${CHANGED} (rel: ${OLD_REL:0:12}→${NEW_REL:0:12}, beta: ${OLD_BETA:0:12}→${NEW_BETA:0:12})"
+
+          mkdir -p state
+          cp channels.json state/cdn-etag.json
+          if [ "${CHANGED}" = "true" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add state/cdn-etag.json
+            if ! git diff --cached --quiet; then
+              git commit -m "chore: update cdn etag state"
+              git push origin HEAD
+              echo "Etag 状态已提交"
+            fi
+          fi
+
+      - name: Compare with published releases
+        id: decide
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VCODE: ${{ steps.check.outputs.version_code }}
+        run: |
+          set -uo pipefail
+
+          # Latest published versionCode across both channels (release-v*/beta-v*)
+          LOCAL=$(gh release list --json tagName --limit 100 \
+            | jq -r '[.[].tagName | select(test("^(release|beta)-v"))]
+                     | map(capture("-(?<c>[0-9]+)$").c | tonumber) | max // 0')
+
+          echo "local latest versionCode: ${LOCAL}"
+          echo "remote versionCode: ${VCODE}"
+
+          if [ -n "${VCODE}" ] && [ "${VCODE}" -gt "${LOCAL}" ]; then
+            echo "has_update=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::新版本 ${VCODE} > ${LOCAL}，触发下载"
+          else
+            echo "has_update=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::无新版本（远端 ${VCODE:-无} / 本地 ${LOCAL}），跳过下载"
+          fi
+
+  # ============================================================
+  # APK Download / Analyze / Publish（仅在新版本时运行）
+  # ============================================================
+
+  track:
+    needs: precheck
+    if: needs.precheck.outputs.has_update == 'true'
+    runs-on: ubuntu-26.04
+
+    env:
+      TZ: Asia/Shanghai
+      TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+      TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+      TG_API_ID: ${{ secrets.TG_API_ID }}
+      TG_API_HASH: ${{ secrets.TG_API_HASH }}
+      TG_SESSION: ${{ secrets.TG_SESSION }}
 
       UA: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36
 
@@ -1093,6 +1248,7 @@ jobs:
       - name: Publish Releases
         env:
           GH_TOKEN: ${{ github.token }}
+          CHANGE_LOG: ${{ needs.precheck.outputs.change_log }}
 
         shell: bash
 
@@ -1100,6 +1256,19 @@ jobs:
           set -euo pipefail
 
           PUBLISHED=0
+
+          cd work
+
+          # 官方更新日志（来自 precheck 商店源共识）注入 Release 渠道的发布说明
+          if [ -n "${CHANGE_LOG}" ]; then
+            {
+              echo ""
+              echo "## 📝 官方更新日志"
+              echo ""
+              echo "${CHANGE_LOG}"
+            } >> body-release.md
+            echo "已注入官方更新日志"
+          fi
 
           cd work
 
@@ -1143,6 +1312,10 @@ jobs:
               --notes-file "body-${channel}.md"
 
             echo "已发布：${TAG}"
+
+            echo "PUBLISHED_TAG=${TAG}" >> "$GITHUB_ENV"
+            echo "PUBLISHED_CHANNEL=${channel}" >> "$GITHUB_ENV"
+            echo "PUBLISHED_ASSET=${ASSET}" >> "$GITHUB_ENV"
 
             PUBLISHED=1
 
@@ -1191,4 +1364,121 @@ jobs:
             echo
             echo "无新版本，README 不变更"
 
+          fi
+
+      # ============================================================
+      # Telegram Channel Publication
+      # ============================================================
+
+      - name: Publish APK to Telegram channel
+        if: env.PUBLISHED_TAG != '' && env.TG_SESSION != ''
+        env:
+          CHANGE_LOG: ${{ needs.precheck.outputs.change_log }}
+          VCODE: ${{ needs.precheck.outputs.version_code }}
+          VNAME: ${{ needs.precheck.outputs.version_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          pip install -q telethon
+
+          python - <<'PY'
+          import os, sys
+          from telethon import TelegramClient
+          from telethon.sessions import StringSession
+
+          asset = os.environ["PUBLISHED_ASSET"]
+          path = os.path.join("work", asset)
+          if not os.path.isfile(path):
+              print(f"::warning::APK 文件不存在: {path}")
+              sys.exit(0)
+
+          channel = os.environ["TG_CHAT_ID"]
+          vname = os.environ["VNAME"]
+          vcode = os.environ["VCODE"]
+          clog = os.environ.get("CHANGE_LOG", "").strip() or "（官方未提供）"
+          ch = os.environ["PUBLISHED_CHANNEL"]
+          label = "🧪 <b>Beta</b>" if ch == "beta" else "📦 <b>Release</b>"
+          repo = os.environ["GITHUB_REPOSITORY"]
+          tag = os.environ["PUBLISHED_TAG"]
+          apk_url = f"https://github.com/{repo}/releases/download/{tag}/{asset}"
+          rel_url = f"https://github.com/{repo}/releases/tag/{tag}"
+
+          caption = (
+              f"{label} 小黑盒 APK 更新\n\n"
+              f"<b>{vname}</b>（versionCode {vcode}）\n\n"
+              f"<b>更新日志</b>：\n{clog}\n\n"
+              f"📥 <a href=\"{apk_url}\">APK 直接下载</a>\n"
+              f"🔗 <a href=\"{rel_url}\">{tag}</a>"
+          )
+
+          try:
+              with TelegramClient(
+                  StringSession(os.environ["TG_SESSION"]),
+                  int(os.environ["TG_API_ID"]),
+                  os.environ["TG_API_HASH"],
+              ) as client:
+                  client.send_file(
+                      channel, path,
+                      caption=caption,
+                      parse_mode="html",
+                      force_document=True,
+                  )
+              print("APK 已发布到 Telegram 频道")
+          except Exception as e:
+              print(f"::warning::Telegram 频道发布失败: {e}")
+              sys.exit(0)
+          PY
+
+      - name: Notify Telegram
+        if: env.PUBLISHED_TAG != '' && env.TG_SESSION == '' && env.TG_BOT_TOKEN != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHANGE_LOG: ${{ needs.precheck.outputs.change_log }}
+          VCODE: ${{ needs.precheck.outputs.version_code }}
+          VNAME: ${{ needs.precheck.outputs.version_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ -z "${TG_BOT_TOKEN}" ] || [ -z "${TG_CHAT_ID}" ]; then
+            echo "::notice::未配置 TG_BOT_TOKEN / TG_CHAT_ID，跳过 Telegram 通知"
+            exit 0
+          fi
+
+          RELEASE_URL=$(gh release view "$PUBLISHED_TAG" --json url -q .url)
+          APK_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${PUBLISHED_TAG}/${PUBLISHED_ASSET}"
+
+          if [ "${PUBLISHED_CHANNEL}" = "beta" ]; then
+            CHANNEL_TAG="🧪 <b>Beta</b>"
+          else
+            CHANNEL_TAG="📦 <b>Release</b>"
+          fi
+
+          TEXT=$(cat <<MSG
+          ${CHANNEL_TAG} 小黑盒 APK 更新
+
+          <b>${VNAME}</b>（versionCode ${VCODE}）
+
+          <b>更新日志</b>：
+          ${CHANGE_LOG:-（官方未提供）}
+
+          📥 <a href="${APK_URL}">APK 直接下载</a>
+          🔗 <a href="${RELEASE_URL}">${PUBLISHED_TAG}</a>
+          MSG
+          )
+
+          HTTP=$(curl -s -o tg-response.json -w "%{http_code}" \
+            -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${TG_CHAT_ID}" \
+            --data-urlencode "parse_mode=HTML" \
+            --data-urlencode "disable_web_preview=false" \
+            --data-urlencode "text=${TEXT}")
+
+          if [ "$HTTP" = "200" ] && jq -e '.ok == true' tg-response.json >/dev/null; then
+            echo "Telegram 通知已发送"
+          else
+            echo "::warning::Telegram 通知失败 (HTTP ${HTTP})"
+            cat tg-response.json || true
+            # 通知失败不阻塞发布流程
           fi

@@ -1,0 +1,6 @@
+# native 源码闭源：仓库只保留预编译产物（heybox-check-linux-x86_64）
+native/*
+!native/heybox-check-linux-x86_64
+
+# 本地分析产物
+check.json
