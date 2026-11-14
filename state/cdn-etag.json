@@ -1,18 +1,18 @@
 {
-  "release": {
-    "url": "https://dl.max-c.com/app/heybox/heybox-release.apk",
+  "beta": {
+    "content_length": 126994013,
+    "content_md5": "bb/09uOcBDA/o2Qb71fJvQ==",
+    "etag": "\"ll1tLheUmd-c88n5LKqp0sKJHZNm\"",
+    "last_modified": "Sat, 14 Nov 2026 05:02:47 GMT",
     "status": 200,
+    "url": "https://dl.max-c.com/app/heybox/heybox-beta.apk"
+  },
+  "release": {
+    "content_length": 127593467,
+    "content_md5": "lec3oum+vGKyytaEe5ve6w==",
     "etag": "\"lkbzjzDBwImluDwcgj4vphLcwF6e\"",
     "last_modified": "Tue, 10 Nov 2026 02:49:17 GMT",
-    "content_length": 127593467,
-    "content_md5": "lec3oum+vGKyytaEe5ve6w=="
-  },
-  "beta": {
-    "url": "https://dl.max-c.com/app/heybox/heybox-beta.apk",
     "status": 200,
-    "etag": "\"lvWEvoLZ7XvkHdfVc6pajc-7Qz-w\"",
-    "last_modified": "Fri, 13 Nov 2026 14:07:36 GMT",
-    "content_length": 126994006,
-    "content_md5": "nydCxEOD8+XgbwfPFyRbPQ=="
+    "url": "https://dl.max-c.com/app/heybox/heybox-release.apk"
   }
 }
