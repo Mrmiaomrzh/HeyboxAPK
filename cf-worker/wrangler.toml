@@ -7,4 +7,4 @@ crons = ["*/5 * * * *"]
 
 [[kv_namespaces]]
 binding = "ETAG_STATE"
-id = "REPLACE_WITH_KV_NAMESPACE_ID"
+id = "502e9db9a3e54a9bbe29afd3e0f3e109"
