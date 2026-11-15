@@ -5,6 +5,9 @@ on:
     - cron: "0 0 * * *"
     - cron: "0 12 * * *"
 
+  repository_dispatch:
+    types: [heybox-etag-changed]
+
   workflow_dispatch:
 
 permissions:
