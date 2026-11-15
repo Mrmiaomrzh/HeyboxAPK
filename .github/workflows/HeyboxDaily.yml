@@ -88,10 +88,30 @@ jobs:
         id: cdn
         shell: bash
         run: |
-          set -euo pipefail
+          set -uo pipefail
 
-          ./heybox-check-bin channels > channels.json
-          cat channels.json
+          CHANNELS_OK=false
+          for i in 1 2 3; do
+            set +e
+            ./heybox-check-bin channels > channels.json
+            CODE=$?
+            set -e
+            cat channels.json
+
+            if [ "$CODE" -eq 0 ]; then
+              CHANNELS_OK=true
+              break
+            fi
+
+            echo "::warning::channels 第 ${i}/3 次尝试失败 (exit ${CODE})"
+            [ "$i" -lt 3 ] && sleep 10
+          done
+
+          if [ "$CHANNELS_OK" != "true" ]; then
+            echo "::warning::CDN channels 查询 3 次均失败，跳过本轮 Etag 跟踪（不影响版本共识检测）"
+            echo "etag_changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
 
           OLD_REL=""
           OLD_BETA=""
