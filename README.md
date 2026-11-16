@@ -98,6 +98,7 @@
 - `com.hihonor.push.permission.READ_PUSH_NOTIFICATION_INFO`
 
 </details>
+
 ## Beta - 小黑盒 1.3.402 (1154)
 
 **文件名**：`Beta-1.3.402(1154)-20261116.apk`

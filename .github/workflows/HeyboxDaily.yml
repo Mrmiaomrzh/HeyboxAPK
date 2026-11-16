@@ -1053,10 +1053,11 @@ jobs:
 
           } >> "$GITHUB_STEP_SUMMARY"
 
-          cat \
-            body-release.md \
-            body-beta.md \
-            > analysis-section.md
+          {
+            cat body-release.md
+            echo
+            cat body-beta.md
+          } > analysis-section.md
 
           python3 - <<'PYEOF'
           import pathlib
@@ -1171,6 +1172,8 @@ jobs:
             echo "PUBLISHED_TAG=${TAG}" >> "$GITHUB_ENV"
             echo "PUBLISHED_CHANNEL=${channel}" >> "$GITHUB_ENV"
             echo "PUBLISHED_ASSET=${ASSET}" >> "$GITHUB_ENV"
+            echo "PUBLISHED_VNAME=${VNAME}" >> "$GITHUB_ENV"
+            echo "PUBLISHED_VCODE=${VCODE}" >> "$GITHUB_ENV"
 
             PUBLISHED=1
 
@@ -1223,8 +1226,9 @@ jobs:
         if: env.PUBLISHED_TAG != '' && env.TG_SESSION != ''
         env:
           CHANGE_LOG: ${{ needs.precheck.outputs.change_log }}
-          VCODE: ${{ needs.precheck.outputs.version_code }}
-          VNAME: ${{ needs.precheck.outputs.version_name }}
+          STORE_VCODE: ${{ needs.precheck.outputs.version_code }}
+          VCODE: ${{ env.PUBLISHED_VCODE }}
+          VNAME: ${{ env.PUBLISHED_VNAME }}
         shell: bash
         run: |
           set -euo pipefail
@@ -1245,8 +1249,11 @@ jobs:
           channel = os.environ["TG_CHAT_ID"]
           vname = os.environ["VNAME"]
           vcode = os.environ["VCODE"]
-          clog = os.environ.get("CHANGE_LOG", "").strip() or "（官方未提供）"
           ch = os.environ["PUBLISHED_CHANNEL"]
+          clog = ""
+          if ch == "release" and vcode == os.environ.get("STORE_VCODE"):
+              clog = os.environ.get("CHANGE_LOG", "").strip()
+          clog = clog or "（该版本更新日志未提供）"
           label = "🧪 <b>Beta</b>" if ch == "beta" else "📦 <b>Release</b>"
           repo = os.environ["GITHUB_REPOSITORY"]
           tag = os.environ["PUBLISHED_TAG"]
@@ -1284,8 +1291,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           CHANGE_LOG: ${{ needs.precheck.outputs.change_log }}
-          VCODE: ${{ needs.precheck.outputs.version_code }}
-          VNAME: ${{ needs.precheck.outputs.version_name }}
+          STORE_VCODE: ${{ needs.precheck.outputs.version_code }}
+          VCODE: ${{ env.PUBLISHED_VCODE }}
+          VNAME: ${{ env.PUBLISHED_VNAME }}
         shell: bash
         run: |
           set -euo pipefail
@@ -1300,8 +1308,12 @@ jobs:
 
           if [ "${PUBLISHED_CHANNEL}" = "beta" ]; then
             CHANNEL_TAG="🧪 <b>Beta</b>"
+            CHANGE_LOG=""
           else
             CHANNEL_TAG="📦 <b>Release</b>"
+            if [ "${VCODE}" != "${STORE_VCODE}" ]; then
+              CHANGE_LOG=""
+            fi
           fi
 
           TEXT=$(cat <<MSG
@@ -1310,7 +1322,7 @@ jobs:
           <b>${VNAME}</b>（versionCode ${VCODE}）
 
           <b>更新日志</b>：
-          ${CHANGE_LOG:-（官方未提供）}
+          ${CHANGE_LOG:-（该版本更新日志未提供）}
 
           📥 <a href="${APK_URL}">APK 直接下载</a>
           🔗 <a href="${RELEASE_URL}">${PUBLISHED_TAG}</a>
