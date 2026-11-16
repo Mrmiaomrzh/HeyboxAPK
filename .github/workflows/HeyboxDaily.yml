@@ -41,8 +41,8 @@ jobs:
         run: |
           set -euo pipefail
 
-          chmod +x native/heybox-check-linux-x86_64
           cp native/heybox-check-linux-x86_64 heybox-check-bin
+          chmod +x heybox-check-bin
 
           ./heybox-check-bin check --sources hais --min-agree 1 --timeout 15 >/dev/null \
             && echo "native checker ready"
@@ -91,51 +91,61 @@ jobs:
         id: cdn
         shell: bash
         run: |
-          set -uo pipefail
+          set -euo pipefail
 
-          CHANNELS_OK=false
-          for i in 1 2 3; do
-            set +e
-            ./heybox-check-bin channels > channels.json
-            CODE=$?
-            set -e
-            cat channels.json
-
-            if [ "$CODE" -eq 0 ]; then
-              CHANNELS_OK=true
-              break
-            fi
-
-            echo "::warning::channels 第 ${i}/3 次尝试失败 (exit ${CODE})"
-            [ "$i" -lt 3 ] && sleep 10
-          done
-
-          if [ "$CHANNELS_OK" != "true" ]; then
-            echo "::warning::CDN channels 查询 3 次均失败，跳过本轮 Etag 跟踪（不影响版本共识检测）"
-            echo "etag_changed=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          OLD_REL=""
-          OLD_BETA=""
           if [ -f state/cdn-etag.json ]; then
-            OLD_REL=$(jq -r '.release.etag // empty' state/cdn-etag.json)
-            OLD_BETA=$(jq -r '.beta.etag // empty' state/cdn-etag.json)
+            cp state/cdn-etag.json channels.json
+          else
+            printf '{}\n' > channels.json
           fi
-          NEW_REL=$(jq -r '.release.etag // empty' channels.json)
-          NEW_BETA=$(jq -r '.beta.etag // empty' channels.json)
 
           CHANGED=false
-          if { [ -n "${NEW_REL}" ] && [ "${NEW_REL}" != "${OLD_REL}" ]; } || \
-             { [ -n "${NEW_BETA}" ] && [ "${NEW_BETA}" != "${OLD_BETA}" ]; }; then
-            CHANGED=true
-          fi
-          echo "etag_changed=${CHANGED}" >> "$GITHUB_OUTPUT"
-          echo "::notice::etag changed=${CHANGED} (rel: ${OLD_REL:0:12}→${NEW_REL:0:12}, beta: ${OLD_BETA:0:12}→${NEW_BETA:0:12})"
+          for channel in release beta; do
+            url="https://dl.max-c.com/app/heybox/heybox-${channel}.apk"
+            response="channel-${channel}.json"
+            channel_ok=false
 
-          mkdir -p state
-          cp channels.json state/cdn-etag.json
-          if [ "${CHANGED}" = "true" ]; then
+            for i in 1 2 3; do
+              echo "Checking ${channel}: ${url} (attempt ${i}/3)"
+              if ./heybox-check-bin cdn "$url" > "$response"; then
+                code=0
+              else
+                code=$?
+              fi
+              cat "$response"
+
+              if [ "$code" -eq 0 ] && jq -e '.status == 200 and (.etag | type == "string" and length > 0)' "$response" >/dev/null; then
+                channel_ok=true
+                break
+              fi
+
+              echo "::warning::${channel} CDN 第 ${i}/3 次尝试失败或没有 ETag (exit ${code})"
+              if [ "$i" -lt 3 ]; then
+                sleep 10
+              fi
+            done
+
+            if [ "$channel_ok" != "true" ]; then
+              echo "::warning::${channel} CDN 检测失败，保留该渠道原有 ETag"
+              continue
+            fi
+
+            old_etag=$(jq -r --arg channel "$channel" '.[$channel].etag // empty' channels.json)
+            new_etag=$(jq -r '.etag' "$response")
+            if [ "$new_etag" != "$old_etag" ]; then
+              CHANGED=true
+              jq --arg channel "$channel" --slurpfile result "$response" '.[$channel] = $result[0]' channels.json > channels-next.json
+              mv channels-next.json channels.json
+              echo "::notice::${channel} ETag 已变化"
+            else
+              echo "::notice::${channel} ETag 未变化"
+            fi
+          done
+
+          echo "etag_changed=${CHANGED}" >> "$GITHUB_OUTPUT"
+          if [ "$CHANGED" = "true" ]; then
+            mkdir -p state
+            cp channels.json state/cdn-etag.json
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git add state/cdn-etag.json
