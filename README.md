@@ -1,45 +1,54 @@
 # HeyboxAPK
 
-自动收集小黑盒（XiaoHeiHe）安装包，每日追踪 Release 与 Beta 渠道的版本变化。
+[![Workflow status](https://github.com/Mrmiaomrzh/HeyboxAPK/actions/workflows/HeyboxDaily.yml/badge.svg)](https://github.com/Mrmiaomrzh/HeyboxAPK/actions/workflows/HeyboxDaily.yml)
 
-[![Heybox APK Daily Tracker](https://github.com/Mrmiaomrzh/HeyboxAPK/actions/workflows/HeyboxDaily.yml/badge.svg)](https://github.com/Mrmiaomrzh/HeyboxAPK/actions/workflows/HeyboxDaily.yml)
+**English** | [简体中文](README.zh-CN.md)
 
-## 工作流介绍
+HeyboxAPK tracks the Android release and beta APKs for Xiaoheihe (小黑盒), records package metadata, and publishes newly detected versions to GitHub Releases.
 
-由 [`.github/workflows/HeyboxDaily.yml`](.github/workflows/HeyboxDaily.yml) 自动完成：
+[Browse releases](https://github.com/Mrmiaomrzh/HeyboxAPK/releases) · [View workflow runs](https://github.com/Mrmiaomrzh/HeyboxAPK/actions/workflows/HeyboxDaily.yml) · [Latest APK analysis](#latest-apk-analysis)
 
-- ⏰ **定时运行**：每天 2 次 —— 北京时间 08:00（UTC 00:00）与 20:00（UTC 12:00）触发，也支持在 Actions 页面手动触发
-- ⬇️ **下载 APK**（带浏览器 UA）：
-  - Release 渠道：<https://dl.max-c.com/app/heybox/heybox-release.apk>
-  - Beta 渠道：<https://dl.max-c.com/app/heybox/heybox-beta.apk>
-- 📦 **命名规则**：`Release/Beta-版本名称(版本号)-yyyymmdd.apk`，例如 `Release-1.3.394(1127)-20260829.apk`
-- 🏷️ **发布 Release**：按小版本号（versionCode）打 Tag（`release-v<版本名称>-<小版本号>` / `beta-v<版本名称>-<小版本号>`，例如 `release-v1.3.394-1127`、`beta-v1.3.395-1129`），APK 作为附件上传；版本未更新时自动跳过，不重复发布
-- 📝 **自动分析**：解析包名、版本、最低/目标 SDK、ABI、完整权限列表、SHA-256、签名证书等信息，写入 Job Summary 与 Release Note，并自动更新本页下方「最新分析」区块提交回仓库
+## Downloads
 
-## 最新分析
+| Channel | Official CDN | GitHub archive |
+| --- | --- | --- |
+| Release | [Download APK](https://dl.max-c.com/app/heybox/heybox-release.apk) | [Browse releases](https://github.com/Mrmiaomrzh/HeyboxAPK/releases) |
+| Beta | [Download APK](https://dl.max-c.com/app/heybox/heybox-beta.apk) | [Browse releases](https://github.com/Mrmiaomrzh/HeyboxAPK/releases) |
 
-> 本区块由工作流每次发布新版本时自动更新。
+Release assets use the format `<Channel>-<version>(<versionCode>)-<YYYYMMDD>.apk`. Tags use `release-v<version>-<versionCode>` or `beta-v<version>-<versionCode>`.
+
+## How it works
+
+1. A [Cloudflare Worker](cf-worker/) checks both CDN channels every five minutes and requests a workflow run when a file fingerprint changes.
+2. [GitHub Actions](.github/workflows/HeyboxDaily.yml) checks CDN ETags and queries multiple app-store sources for version information. It also runs daily at 00:00 UTC (08:00 China Standard Time) as a fallback and supports manual runs.
+3. When an update is detected, the workflow downloads and analyzes the APKs, publishes versions whose tags do not already exist, and updates the report below when a release is published.
+
+The analysis includes version information, Android SDK requirements, supported ABIs, permissions, file size, SHA-256, and signing certificate information when available. Release notes may include a store changelog; a verified beta-specific changelog source is not currently configured.
+
+## Latest APK analysis
+
+The following report is maintained by the workflow. App names and permission identifiers are preserved as reported by the APK.
 
 <!-- HEYBOX-ANALYSIS:START -->
 ## Release - 小黑盒 1.3.401 (1151)
 
-**文件名**：`Release-1.3.401(1151)-20261117.apk`
+**File**: `Release-1.3.401(1151)-20261117.apk`
 
-| 项目 | 值 |
+| Field | Value |
 | --- | --- |
-| 应用名称 | 小黑盒 |
-| 包名 | `com.max.xiaoheihe` |
-| 版本名称 | 1.3.401 |
-| 版本号 | 1151 |
-| 最低支持 SDK | API 23（Android 6.0 (Marshmallow)） |
-| 目标 SDK | API 34（Android 14） |
-| 支持 ABI | arm64-v8a |
-| 大小 | 122MB（127593467 字节） |
+| App | 小黑盒 |
+| Package | `com.max.xiaoheihe` |
+| Version | 1.3.401 |
+| Version code | 1151 |
+| Minimum SDK | API 23（Android 6.0 (Marshmallow)） |
+| Target SDK | API 34（Android 14） |
+| ABIs | arm64-v8a |
+| Size | 122MB（127593467 bytes） |
 | SHA-256 | `4eb8801acfa1788907e098c31550559ef5a7df9a01f90296bd25f5eee3a69458` |
-| 下载源 | https://dl.max-c.com/app/heybox/heybox-release.apk |
-| 抓取日期（北京时间） | 2026-11-17 21:16 |
+| Source | https://dl.max-c.com/app/heybox/heybox-release.apk |
+| Collected (China Standard Time) | 2026-11-17 21:16 |
 
-<details><summary>权限列表（55 项）</summary>
+<details><summary>Permissions (55 items)</summary>
 
 - `android.permission.INTERNET`
 - `android.permission.ACCESS_NETWORK_STATE`
@@ -101,23 +110,23 @@
 
 ## Beta - 小黑盒 1.3.402 (1155)
 
-**文件名**：`Beta-1.3.402(1155)-20261117.apk`
+**File**: `Beta-1.3.402(1155)-20261117.apk`
 
-| 项目 | 值 |
+| Field | Value |
 | --- | --- |
-| 应用名称 | 小黑盒 |
-| 包名 | `com.max.xiaoheihe` |
-| 版本名称 | 1.3.402 |
-| 版本号 | 1155 |
-| 最低支持 SDK | API 23（Android 6.0 (Marshmallow)） |
-| 目标 SDK | API 34（Android 14） |
-| 支持 ABI | arm64-v8a |
-| 大小 | 122MB（127005716 字节） |
+| App | 小黑盒 |
+| Package | `com.max.xiaoheihe` |
+| Version | 1.3.402 |
+| Version code | 1155 |
+| Minimum SDK | API 23（Android 6.0 (Marshmallow)） |
+| Target SDK | API 34（Android 14） |
+| ABIs | arm64-v8a |
+| Size | 122MB（127005716 bytes） |
 | SHA-256 | `c9e6f930cd965fc4c468ac516750095c35035258bd34a451f7316d1b518a7e18` |
-| 下载源 | https://dl.max-c.com/app/heybox/heybox-beta.apk |
-| 抓取日期（北京时间） | 2026-11-17 21:17 |
+| Source | https://dl.max-c.com/app/heybox/heybox-beta.apk |
+| Collected (China Standard Time) | 2026-11-17 21:17 |
 
-<details><summary>权限列表（55 项）</summary>
+<details><summary>Permissions (55 items)</summary>
 
 - `android.permission.INTERNET`
 - `android.permission.ACCESS_NETWORK_STATE`
