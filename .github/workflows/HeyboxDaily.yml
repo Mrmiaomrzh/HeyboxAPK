@@ -3,7 +3,6 @@ name: Heybox APK Daily Tracker
 on:
   schedule:
     - cron: "0 0 * * *"
-    - cron: "0 12 * * *"
 
   repository_dispatch:
     types: [heybox-etag-changed]

@@ -2,7 +2,7 @@
 
 每 5 分钟对两个 CDN 渠道发 HEAD 请求，Etag 相比上次发生变化时才调用 GitHub
 `repository_dispatch` 触发 [`HeyboxDaily.yml`](../.github/workflows/HeyboxDaily.yml)。
-定时 schedule（每 12 小时）保留作为兜底。
+定时 schedule（每天一次）保留作为兜底。
 
 ## 部署步骤
 
