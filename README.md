@@ -30,23 +30,23 @@ The analysis includes version information, Android SDK requirements, supported A
 The following report is maintained by the workflow. App names and permission identifiers are preserved as reported by the APK.
 
 <!-- HEYBOX-ANALYSIS:START -->
-## Release - 小黑盒 1.3.401 (1151)
+## Release - 小黑盒 1.3.402 (1155)
 
-**File**: `Release-1.3.401(1151)-20261117.apk`
+**File**: `Release-1.3.402(1155)-20261118.apk`
 
 | Field | Value |
 | --- | --- |
 | App | 小黑盒 |
 | Package | `com.max.xiaoheihe` |
-| Version | 1.3.401 |
-| Version code | 1151 |
+| Version | 1.3.402 |
+| Version code | 1155 |
 | Minimum SDK | API 23（Android 6.0 (Marshmallow)） |
 | Target SDK | API 34（Android 14） |
 | ABIs | arm64-v8a |
-| Size | 122MB（127593467 bytes） |
-| SHA-256 | `4eb8801acfa1788907e098c31550559ef5a7df9a01f90296bd25f5eee3a69458` |
+| Size | 122MB（127654964 bytes） |
+| SHA-256 | `52ffa9bd6b57c6a866918e32363d6b9732bfa3d95cef4a8a89e40bbd24590c7f` |
 | Source | https://dl.max-c.com/app/heybox/heybox-release.apk |
-| Collected (China Standard Time) | 2026-11-17 21:16 |
+| Collected (China Standard Time) | 2026-11-18 11:27 |
 
 <details><summary>Permissions (55 items)</summary>
 
@@ -110,7 +110,7 @@ The following report is maintained by the workflow. App names and permission ide
 
 ## Beta - 小黑盒 1.3.402 (1155)
 
-**File**: `Beta-1.3.402(1155)-20261117.apk`
+**File**: `Beta-1.3.402(1155)-20261118.apk`
 
 | Field | Value |
 | --- | --- |
@@ -124,7 +124,7 @@ The following report is maintained by the workflow. App names and permission ide
 | Size | 122MB（127005716 bytes） |
 | SHA-256 | `c9e6f930cd965fc4c468ac516750095c35035258bd34a451f7316d1b518a7e18` |
 | Source | https://dl.max-c.com/app/heybox/heybox-beta.apk |
-| Collected (China Standard Time) | 2026-11-17 21:17 |
+| Collected (China Standard Time) | 2026-11-18 11:27 |
 
 <details><summary>Permissions (55 items)</summary>
 
