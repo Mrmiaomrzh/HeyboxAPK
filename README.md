@@ -30,23 +30,23 @@ The analysis includes version information, Android SDK requirements, supported A
 The following report is maintained by the workflow. App names and permission identifiers are preserved as reported by the APK.
 
 <!-- HEYBOX-ANALYSIS:START -->
-## Release - 小黑盒 1.3.402 (1155)
+## Release - 小黑盒 1.3.403 (1156)
 
-**File**: `Release-1.3.402(1155)-20261123.apk`
+**File**: `Release-1.3.403(1156)-20261125.apk`
 
 | Field | Value |
 | --- | --- |
 | App | 小黑盒 |
 | Package | `com.max.xiaoheihe` |
-| Version | 1.3.402 |
-| Version code | 1155 |
+| Version | 1.3.403 |
+| Version code | 1156 |
 | Minimum SDK | API 23（Android 6.0 (Marshmallow)） |
 | Target SDK | API 34（Android 14） |
 | ABIs | arm64-v8a |
-| Size | 122MB（127654964 bytes） |
-| SHA-256 | `52ffa9bd6b57c6a866918e32363d6b9732bfa3d95cef4a8a89e40bbd24590c7f` |
+| Size | 145MB（151233481 bytes） |
+| SHA-256 | `2f09e3f68ff3fe23a1e2635e9e930c0752d066df5f8b88ea7ffea213f75563a3` |
 | Source | https://dl.max-c.com/app/heybox/heybox-release.apk |
-| Collected (China Standard Time) | 2026-11-23 15:38 |
+| Collected (China Standard Time) | 2026-11-25 11:42 |
 
 <details><summary>Permissions (55 items)</summary>
 
@@ -90,9 +90,9 @@ The following report is maintained by the workflow. App names and permission ide
 - `oplus.permission.settings.LAUNCH_FOR_EXPORT`
 - `com.vivo.identifier.permission.OAID_STATE_DIALOG`
 - `android.permission.FOREGROUND_SERVICE_DATA_SYNC`
-- `android.permission.MOUNT_UNMOUNT_FILESYSTEMS`
 - `android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION`
 - `com.max.xiaoheihe.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION`
+- `android.permission.MOUNT_UNMOUNT_FILESYSTEMS`
 - `com.coloros.mcs.permission.RECIEVE_MCS_MESSAGE`
 - `com.heytap.mcs.permission.RECIEVE_MCS_MESSAGE`
 - `android.permission.ACCESS_BACKGROUND_LOCATION`
@@ -110,7 +110,7 @@ The following report is maintained by the workflow. App names and permission ide
 
 ## Beta - 小黑盒 1.3.403 (1156)
 
-**File**: `Beta-1.3.403(1156)-20261123.apk`
+**File**: `Beta-1.3.403(1156)-20261125.apk`
 
 | Field | Value |
 | --- | --- |
@@ -124,7 +124,7 @@ The following report is maintained by the workflow. App names and permission ide
 | Size | 144MB（150511842 bytes） |
 | SHA-256 | `89b7ccf85b02b02becb6ca4a3267ceabb712ab2316ec5a0e1158d97cc01a156b` |
 | Source | https://dl.max-c.com/app/heybox/heybox-beta.apk |
-| Collected (China Standard Time) | 2026-11-23 15:38 |
+| Collected (China Standard Time) | 2026-11-25 11:42 |
 
 <details><summary>Permissions (55 items)</summary>
 
