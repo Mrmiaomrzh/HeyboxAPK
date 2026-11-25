@@ -46,7 +46,7 @@ The following report is maintained by the workflow. App names and permission ide
 | Size | 145MB（151233481 bytes） |
 | SHA-256 | `2f09e3f68ff3fe23a1e2635e9e930c0752d066df5f8b88ea7ffea213f75563a3` |
 | Source | https://dl.max-c.com/app/heybox/heybox-release.apk |
-| Collected (China Standard Time) | 2026-11-25 11:42 |
+| Collected (China Standard Time) | 2026-11-25 19:20 |
 
 <details><summary>Permissions (55 items)</summary>
 
@@ -108,23 +108,23 @@ The following report is maintained by the workflow. App names and permission ide
 
 </details>
 
-## Beta - 小黑盒 1.3.403 (1156)
+## Beta - 小黑盒 1.3.403 (1157)
 
-**File**: `Beta-1.3.403(1156)-20261125.apk`
+**File**: `Beta-1.3.403(1157)-20261125.apk`
 
 | Field | Value |
 | --- | --- |
 | App | 小黑盒 |
 | Package | `com.max.xiaoheihe` |
 | Version | 1.3.403 |
-| Version code | 1156 |
+| Version code | 1157 |
 | Minimum SDK | API 23（Android 6.0 (Marshmallow)） |
 | Target SDK | API 34（Android 14） |
 | ABIs | arm64-v8a |
-| Size | 144MB（150511842 bytes） |
-| SHA-256 | `89b7ccf85b02b02becb6ca4a3267ceabb712ab2316ec5a0e1158d97cc01a156b` |
+| Size | 144MB（150511537 bytes） |
+| SHA-256 | `3c702b5dfbc8d773db90b825f4bfbd29520418934ebe49161b2815e11adab84a` |
 | Source | https://dl.max-c.com/app/heybox/heybox-beta.apk |
-| Collected (China Standard Time) | 2026-11-25 11:42 |
+| Collected (China Standard Time) | 2026-11-25 19:20 |
 
 <details><summary>Permissions (55 items)</summary>
 
